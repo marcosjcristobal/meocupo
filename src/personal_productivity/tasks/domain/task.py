@@ -26,6 +26,9 @@ class Task:
     # Optional context may explain the task without becoming its identity.
     description: str | None = None
 
+    # Exact minutes preserve more information than a broad effort category.
+    estimated_minutes: int | None = None
+
     # The factory generates a fresh identifier for every new task instance.
     id: UUID = field(default_factory=uuid4)
 
@@ -77,6 +80,18 @@ class Task:
 
         # Persist the canonical representation used by every external channel.
         self.title = normalized_title
+
+        # Validate runtime type because annotations alone do not enforce it.
+        if self.estimated_minutes is not None:
+            if isinstance(self.estimated_minutes, bool) or not isinstance(
+                self.estimated_minutes,
+                int,
+            ):
+                raise TypeError("Estimated minutes must be an integer.")
+
+            # An explicit estimate must represent a positive amount of work.
+            if self.estimated_minutes <= 0:
+                raise ValueError("Estimated minutes must be greater than zero.")
 
     def start(self) -> None:
         """Move a pending task into active work."""

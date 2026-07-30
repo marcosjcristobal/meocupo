@@ -376,3 +376,55 @@ def test_task_converts_blank_description_to_none() -> None:
 
     # Assert: avoid storing an ambiguous empty string.
     assert task.description is None
+
+def test_estimated_minutes_are_optional() -> None:
+    """Verify that a task may exist before its effort is estimated."""
+
+    # Act: create a task without planning its duration.
+    task = Task(title="Study Docker.")
+
+    # Assert: missing estimation has one explicit representation.
+    assert task.estimated_minutes is None
+
+
+def test_task_accepts_positive_estimated_minutes() -> None:
+    """Verify that a positive whole-minute estimate is preserved."""
+
+    # Act: create a task with one hour of estimated work.
+    task = Task(title="Study Docker.", estimated_minutes=60)
+
+    # Assert: retain the exact value for planning and analytics.
+    assert task.estimated_minutes == 60
+
+
+@pytest.mark.parametrize("invalid_minutes", [0, -1])
+def test_task_rejects_non_positive_estimated_minutes(
+    invalid_minutes: int,
+) -> None:
+    """Ensure that an existing estimate always represents real duration."""
+
+    # Act and Assert: zero and negative durations have no domain meaning.
+    with pytest.raises(
+        ValueError,
+        match="Estimated minutes must be greater than zero",
+    ):
+        Task(
+            title="Study Docker.",
+            estimated_minutes=invalid_minutes,
+        )
+
+@pytest.mark.parametrize("invalid_minutes", [True, 1.5, "60"])
+def test_task_rejects_non_integer_estimated_minutes(
+    invalid_minutes: object,
+) -> None:
+    """Ensure that duration is represented by whole minutes only."""
+
+    # Act and Assert: booleans, decimals, and strings are not minute counts.
+    with pytest.raises(
+        TypeError,
+        match="Estimated minutes must be an integer",
+    ):
+        Task(
+            title="Study Docker.",
+            estimated_minutes=invalid_minutes,
+        )
