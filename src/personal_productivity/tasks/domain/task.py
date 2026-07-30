@@ -17,6 +17,9 @@ class InvalidTaskTransitionError(ValueError):
     """Raised when a requested task lifecycle transition is not allowed."""
 
 
+class TaskNotEditableError(ValueError):
+    """Raised when a terminal task receives a planning modification."""
+
 @dataclass(slots=True, kw_only=True, eq=False)
 class Task:
     """Represent a task whose lifecycle is controlled by domain rules."""
@@ -176,3 +179,37 @@ class Task:
 
         # Cancellation changes lifecycle state but never completion metadata.
         self._status = TaskStatus.CANCELLED
+
+    def set_deadline(self, deadline: TaskDeadline) -> None:
+        """Assign or replace the deadline of an unfinished task."""
+
+        # Terminal tasks retain the planning data that produced their outcome.
+        self._ensure_editable(action="change deadline")
+
+        # Reuse the value object boundary instead of duplicating its rules.
+        if not isinstance(deadline, TaskDeadline):
+            raise TypeError("Task deadline must be a TaskDeadline.")
+
+        # Replacing an immutable value keeps the update conceptually atomic.
+        self.deadline = deadline
+
+    def clear_deadline(self) -> None:
+        """Remove the deadline from an unfinished task."""
+
+        # Terminal tasks retain their historical temporal context.
+        self._ensure_editable(action="clear deadline")
+
+        # None is the canonical representation for a task without a deadline.
+        self.deadline = None
+
+    def _ensure_editable(self, *, action: str) -> None:
+        """Reject planning changes after the task reaches a terminal state."""
+
+        # Completed and cancelled tasks represent immutable historical outcomes.
+        if self._status in (
+            TaskStatus.COMPLETED,
+            TaskStatus.CANCELLED,
+        ):
+            raise TaskNotEditableError(
+                f"Cannot {action} for a task in '{self._status.value}'."
+            )

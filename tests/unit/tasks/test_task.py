@@ -9,7 +9,11 @@ from uuid import UUID
 import pytest
 
 # Import the entity and its domain types through absolute package paths.
-from personal_productivity.tasks.domain.task import InvalidTaskTransitionError, Task
+from personal_productivity.tasks.domain.task import (
+    InvalidTaskTransitionError,
+    Task,
+    TaskNotEditableError,
+    )
 from personal_productivity.tasks.domain.task_priority import TaskPriority
 from personal_productivity.tasks.domain.task_status import TaskStatus
 from personal_productivity.tasks.domain.task_deadline import TaskDeadline
@@ -465,3 +469,96 @@ def test_task_rejects_raw_deadline_values() -> None:
             title="Renew the insurance.",
             deadline=date(2026, 8, 15),
         )
+
+def test_task_can_replace_deadline() -> None:
+    """Verify that an unfinished task may receive a new deadline."""
+
+    # Arrange: create the original and replacement deadline values.
+    original_deadline = TaskDeadline(due_on=date(2026, 8, 15))
+    replacement_deadline = TaskDeadline(due_on=date(2026, 8, 20))
+    task = Task(
+        title="Renew the insurance.",
+        deadline=original_deadline,
+    )
+
+    # Act: replace the deadline through an explicit domain operation.
+    task.set_deadline(replacement_deadline)
+
+    # Assert: the new immutable value replaces the old one.
+    assert task.deadline == replacement_deadline
+
+
+def test_task_can_clear_deadline() -> None:
+    """Verify that an unfinished task may become undated."""
+
+    # Arrange: create a task with an existing deadline.
+    task = Task(
+        title="Renew the insurance.",
+        deadline=TaskDeadline(due_on=date(2026, 8, 15)),
+    )
+
+    # Act: remove the temporal constraint explicitly.
+    task.clear_deadline()
+
+    # Assert: absence returns to its canonical representation.
+    assert task.deadline is None
+
+
+def test_set_deadline_rejects_raw_values() -> None:
+    """Ensure that deadline changes cannot bypass the value object."""
+
+    # Arrange: create an otherwise valid task.
+    task = Task(title="Renew the insurance.")
+
+    # Act and Assert: raw dates are not accepted by domain operations.
+    with pytest.raises(
+        TypeError,
+        match="Task deadline must be a TaskDeadline",
+    ):
+        task.set_deadline(date(2026, 8, 15))
+
+def test_completed_task_cannot_replace_deadline() -> None:
+    """Ensure that completed task planning remains historical."""
+
+    # Arrange: complete a task that already has a deadline.
+    original_deadline = TaskDeadline(due_on=date(2026, 8, 15))
+    replacement_deadline = TaskDeadline(due_on=date(2026, 8, 20))
+    task = Task(
+        title="Renew the insurance.",
+        deadline=original_deadline,
+    )
+    task.complete(
+        completed_at=datetime(2026, 8, 14, 18, 0, tzinfo=UTC),
+    )
+
+    # Act and Assert: terminal tasks cannot be rescheduled.
+    with pytest.raises(
+        TaskNotEditableError,
+        match="Cannot change deadline for a task in 'completed'",
+    ):
+        task.set_deadline(replacement_deadline)
+
+    # Assert: rejection preserves historical planning.
+    assert task.deadline == original_deadline
+
+
+def test_cancelled_task_cannot_clear_deadline() -> None:
+    """Ensure that cancelled task planning remains historical."""
+
+    # Arrange: cancel a task that has an existing deadline.
+    original_deadline = TaskDeadline(due_on=date(2026, 8, 15))
+    task = Task(
+        title="Renew the insurance.",
+        deadline=original_deadline,
+    )
+    task.cancel()
+
+    # Act and Assert: terminal tasks cannot lose their historical deadline.
+    with pytest.raises(
+        TaskNotEditableError,
+        match="Cannot clear deadline for a task in 'cancelled'",
+    ):
+        task.clear_deadline()
+
+    # Assert: rejection preserves the original deadline.
+    assert task.deadline == original_deadline
