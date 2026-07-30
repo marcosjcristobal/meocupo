@@ -7,7 +7,7 @@ from uuid import UUID
 import pytest
 
 # Import the entity and its domain types through absolute package paths.
-from personal_productivity.tasks.domain.task import Task
+from personal_productivity.tasks.domain.task import InvalidTaskTransitionError, Task
 from personal_productivity.tasks.domain.task_priority import TaskPriority
 from personal_productivity.tasks.domain.task_status import TaskStatus
 
@@ -35,9 +35,52 @@ def test_new_tasks_receive_distinct_identifiers() -> None:
     assert isinstance(second_task.id, UUID)
     assert first_task.id != second_task.id
 
+
 def test_task_rejects_blank_title() -> None:
     """Ensure that whitespace alone cannot describe a task."""
 
     # Act and Assert: construction must stop when the title has no content.
     with pytest.raises(ValueError, match="Task title cannot be empty"):
         Task(title="   ")
+
+
+def test_task_status_cannot_be_reassigned_directly() -> None:
+    """Ensure that lifecycle changes must use explicit domain methods."""
+
+    # Arrange: create a valid pending task.
+    task = Task(title="Study Docker.")
+
+    # Act and Assert: public assignment must not bypass transition rules.
+    with pytest.raises(AttributeError):
+        task.status = TaskStatus.COMPLETED
+
+
+def test_pending_task_can_start() -> None:
+    """Verify the valid transition from pending to in progress."""
+
+    # Arrange: every new task begins in the pending state.
+    task = Task(title="Study Docker.")
+
+    # Act: express the user's intention through a domain method.
+    task.start()
+
+    # Assert: the entity applies the expected lifecycle transition.
+    assert task.status is TaskStatus.IN_PROGRESS
+
+
+def test_in_progress_task_cannot_start_again() -> None:
+    """Ensure that starting an already active task is rejected."""
+
+    # Arrange: move a new task into active work.
+    task = Task(title="Study Docker.")
+    task.start()
+
+    # Act and Assert: the same transition cannot be applied twice.
+    with pytest.raises(
+        InvalidTaskTransitionError,
+        match="Cannot start a task from 'in_progress'",
+    ):
+        task.start()
+
+    # Assert: a rejected transition must leave the entity unchanged.
+    assert task.status is TaskStatus.IN_PROGRESS
