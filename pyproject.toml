@@ -11,13 +11,13 @@ build-backend = "setuptools.build_meta"
 [project]
 
 # The distribution name may contain hyphens and identifies the installable project.
-name = "personal-productivity-backend"
+name = "meocupo-backend"
 
 # Version 0.1.0 represents the first usable development stage.
 version = "0.1.0"
 
 # This short description explains the project's purpose to packaging tools.
-description = "Modular backend for a personal productivity assistant."
+description = "Modular backend for MeOcupo, a personal assistant for tasks, events, and reminders."
 
 # The application uses Python 3.13 features and type-system improvements.
 requires-python = ">=3.13"
