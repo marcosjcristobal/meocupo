@@ -59,3 +59,27 @@ class Task:
 
         # Mutate the entity only after every transition rule has passed.
         self._status = TaskStatus.IN_PROGRESS
+
+    def pause(self) -> None:
+        """Temporarily stop work on an in-progress task."""
+
+        # Pausing requires work to be actively underway.
+        if self._status is not TaskStatus.IN_PROGRESS:
+            raise InvalidTaskTransitionError(
+                f"Cannot pause a task from '{self._status.value}'."
+            )
+
+        # Apply the transition only after validating its origin.
+        self._status = TaskStatus.PAUSED
+
+    def resume(self) -> None:
+        """Continue work on a paused task."""
+
+        # Resuming is meaningful only when work was previously paused.
+        if self._status is not TaskStatus.PAUSED:
+            raise InvalidTaskTransitionError(
+                f"Cannot resume a task from '{self._status.value}'."
+            )
+
+        # Return the task to active work after validating its origin.
+        self._status = TaskStatus.IN_PROGRESS

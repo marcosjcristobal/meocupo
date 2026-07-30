@@ -84,3 +84,66 @@ def test_in_progress_task_cannot_start_again() -> None:
 
     # Assert: a rejected transition must leave the entity unchanged.
     assert task.status is TaskStatus.IN_PROGRESS
+
+
+def test_in_progress_task_can_pause() -> None:
+    """Verify the valid transition from in progress to paused."""
+
+    # Arrange: only active work can be paused.
+    task = Task(title="Study Docker.")
+    task.start()
+
+    # Act: temporarily stop active work.
+    task.pause()
+
+    # Assert: the task remains unfinished but is no longer active.
+    assert task.status is TaskStatus.PAUSED
+
+
+def test_pending_task_cannot_pause() -> None:
+    """Ensure that work cannot be paused before it has started."""
+
+    # Arrange: a newly created task is still pending.
+    task = Task(title="Study Docker.")
+
+    # Act and Assert: pausing requires an in-progress origin state.
+    with pytest.raises(
+        InvalidTaskTransitionError,
+        match="Cannot pause a task from 'pending'",
+    ):
+        task.pause()
+
+    # Assert: rejection must preserve the original state.
+    assert task.status is TaskStatus.PENDING
+
+
+def test_paused_task_can_resume() -> None:
+    """Verify the valid transition from paused back to in progress."""
+
+    # Arrange: create an active task and pause it.
+    task = Task(title="Study Docker.")
+    task.start()
+    task.pause()
+
+    # Act: continue the previously paused work.
+    task.resume()
+
+    # Assert: resumed work becomes active again.
+    assert task.status is TaskStatus.IN_PROGRESS
+
+
+def test_pending_task_cannot_resume() -> None:
+    """Ensure that work cannot resume when it has never started."""
+
+    # Arrange: a new task has no paused work to continue.
+    task = Task(title="Study Docker.")
+
+    # Act and Assert: resuming requires a paused origin state.
+    with pytest.raises(
+        InvalidTaskTransitionError,
+        match="Cannot resume a task from 'pending'",
+    ):
+        task.resume()
+
+    # Assert: rejection must preserve the pending state.
+    assert task.status is TaskStatus.PENDING
