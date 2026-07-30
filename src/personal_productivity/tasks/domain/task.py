@@ -3,7 +3,7 @@
 # Dataclass removes constructor boilerplate while preserving a regular Python class.
 from dataclasses import dataclass, field
 # Datetime represents lifecycle instants without coupling the entity to a clock.
-from datetime import datetime
+from datetime import date, datetime
 # UUID provides portable identifiers without requiring a database round trip.
 from uuid import UUID, uuid4
 
@@ -69,6 +69,37 @@ class Task:
 
         # External layers may read but cannot directly replace this value.
         return self._completed_at
+
+    def is_overdue(
+        self,
+        *,
+        today: date,
+        now: datetime,
+    ) -> bool:
+        """Calculate delay from explicit local and absolute references."""
+
+        # Terminal outcomes no longer represent outstanding work.
+        if self._status in (
+            TaskStatus.COMPLETED,
+            TaskStatus.CANCELLED,
+        ):
+            return False
+
+        # Without a deadline there is no temporal promise to violate.
+        if self.deadline is None:
+            return False
+
+        # Date-only deadlines use the user's local calendar boundary.
+        if self.deadline.due_on is not None:
+            return today > self.deadline.due_on
+
+        # Exact comparisons require an unambiguous reference instant.
+        if now.tzinfo is None or now.utcoffset() is None:
+            raise ValueError("Current time must include a timezone.")
+
+        # TaskDeadline guarantees that the remaining variant contains due_at.
+        assert self.deadline.due_at is not None
+        return now > self.deadline.due_at
 
     def __post_init__(self) -> None:
         """Validate and normalize invariants after dataclass initialization."""
