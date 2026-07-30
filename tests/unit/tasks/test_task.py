@@ -335,3 +335,44 @@ def test_cancelled_task_cannot_be_completed() -> None:
     # Assert: rejected completion creates no completion metadata.
     assert task.status is TaskStatus.CANCELLED
     assert task.completed_at is None
+
+def test_task_normalizes_surrounding_title_whitespace() -> None:
+    """Ensure that accidental surrounding whitespace is not persisted."""
+
+    # Act: create a task with whitespace introduced by user input.
+    task = Task(title="   Study Docker.   ")
+
+    # Assert: meaningful content remains while surrounding noise is removed.
+    assert task.title == "Study Docker."
+
+def test_task_description_is_optional() -> None:
+    """Verify that a task may exist without additional explanation."""
+
+    # Act: create the smallest valid task.
+    task = Task(title="Study Docker.")
+
+    # Assert: absence has one explicit representation.
+    assert task.description is None
+
+
+def test_task_normalizes_surrounding_description_whitespace() -> None:
+    """Ensure that accidental surrounding whitespace is not persisted."""
+
+    # Act: create a task with a user-provided description.
+    task = Task(
+        title="Study Docker.",
+        description="   Complete the networking chapter.   ",
+    )
+
+    # Assert: preserve content while removing surrounding noise.
+    assert task.description == "Complete the networking chapter."
+
+
+def test_task_converts_blank_description_to_none() -> None:
+    """Ensure that blank and absent descriptions share one representation."""
+
+    # Act: whitespace communicates no additional information.
+    task = Task(title="Study Docker.", description="   ")
+
+    # Assert: avoid storing an ambiguous empty string.
+    assert task.description is None

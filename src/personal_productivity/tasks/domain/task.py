@@ -23,6 +23,9 @@ class Task:
     # Every task needs a human-readable purpose.
     title: str
 
+    # Optional context may explain the task without becoming its identity.
+    description: str | None = None
+
     # The factory generates a fresh identifier for every new task instance.
     id: UUID = field(default_factory=uuid4)
 
@@ -58,11 +61,22 @@ class Task:
         return self._completed_at
 
     def __post_init__(self) -> None:
-        """Validate invariants immediately after dataclass initialization."""
+        """Validate and normalize invariants after dataclass initialization."""
+
+        # Remove accidental whitespace once and reuse the normalized result.
+        normalized_title = self.title.strip()
+
+        # Normalize optional text so blank and absent descriptions are equivalent.
+        if self.description is not None:
+            normalized_description = self.description.strip()
+            self.description = normalized_description or None
 
         # A title containing only whitespace communicates no actionable purpose.
-        if not self.title.strip():
+        if not normalized_title:
             raise ValueError("Task title cannot be empty.")
+
+        # Persist the canonical representation used by every external channel.
+        self.title = normalized_title
 
     def start(self) -> None:
         """Move a pending task into active work."""
