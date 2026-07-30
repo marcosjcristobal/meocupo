@@ -234,3 +234,104 @@ def test_task_rejects_naive_completion_timestamp() -> None:
     # Assert: validation failure must leave all lifecycle data unchanged.
     assert task.status is TaskStatus.PENDING
     assert task.completed_at is None
+
+def test_pending_task_can_be_cancelled() -> None:
+    """Verify that unstarted work may be intentionally abandoned."""
+
+    # Arrange: a new task has not begun and has no completion timestamp.
+    task = Task(title="Buy soil for the pitaya.")
+
+    # Act: intentionally abandon the task.
+    task.cancel()
+
+    # Assert: cancellation is terminal but is not completion.
+    assert task.status is TaskStatus.CANCELLED
+    assert task.completed_at is None
+
+
+def test_in_progress_task_can_be_cancelled() -> None:
+    """Verify that active work may be intentionally abandoned."""
+
+    # Arrange: move the task into active work.
+    task = Task(title="Study Docker.")
+    task.start()
+
+    # Act: stop pursuing the task permanently.
+    task.cancel()
+
+    # Assert: active work becomes cancelled, not completed.
+    assert task.status is TaskStatus.CANCELLED
+    assert task.completed_at is None
+
+
+def test_paused_task_can_be_cancelled() -> None:
+    """Verify that paused work may be intentionally abandoned."""
+
+    # Arrange: begin the task and then pause it.
+    task = Task(title="Study Docker.")
+    task.start()
+    task.pause()
+
+    # Act: abandon the paused task.
+    task.cancel()
+
+    # Assert: cancellation does not require resuming first.
+    assert task.status is TaskStatus.CANCELLED
+    assert task.completed_at is None
+
+
+def test_completed_task_cannot_be_cancelled() -> None:
+    """Ensure that cancellation cannot rewrite a successful outcome."""
+
+    # Arrange: complete the task with authoritative historical metadata.
+    task = Task(title="Study Docker.")
+    completed_at = datetime(2026, 7, 30, 15, 0, tzinfo=UTC)
+    task.complete(completed_at=completed_at)
+
+    # Act and Assert: completed work cannot later become abandoned work.
+    with pytest.raises(
+        InvalidTaskTransitionError,
+        match="Cannot cancel a task from 'completed'",
+    ):
+        task.cancel()
+
+    # Assert: the rejected transition preserves completion metadata.
+    assert task.status is TaskStatus.COMPLETED
+    assert task.completed_at == completed_at
+
+def test_cancelled_task_cannot_be_cancelled_again() -> None:
+    """Ensure that repeated cancellation is rejected explicitly."""
+
+    # Arrange: cancel an unfinished task once.
+    task = Task(title="Study Docker.")
+    task.cancel()
+
+    # Act and Assert: cancellation is a terminal transition.
+    with pytest.raises(
+        InvalidTaskTransitionError,
+        match="Cannot cancel a task from 'cancelled'",
+    ):
+        task.cancel()
+
+    # Assert: the rejected operation preserves cancellation.
+    assert task.status is TaskStatus.CANCELLED
+
+
+def test_cancelled_task_cannot_be_completed() -> None:
+    """Ensure that abandoned work cannot later become successful work."""
+
+    # Arrange: cancel the task and prepare an otherwise valid timestamp.
+    task = Task(title="Study Docker.")
+    task.cancel()
+    completed_at = datetime(2026, 7, 30, 16, 0, tzinfo=UTC)
+
+    # Act and Assert: completion cannot replace cancellation history.
+    with pytest.raises(
+        InvalidTaskTransitionError,
+        match="Cannot complete a task from 'cancelled'",
+    ):
+        task.complete(completed_at=completed_at)
+
+    # Assert: rejected completion creates no completion metadata.
+    assert task.status is TaskStatus.CANCELLED
+    assert task.completed_at is None

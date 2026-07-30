@@ -120,3 +120,19 @@ class Task:
         # Update state and completion metadata only after transition validation.
         self._status = TaskStatus.COMPLETED
         self._completed_at = completed_at
+
+    def cancel(self) -> None:
+        """Abandon an unfinished task without recording completion."""
+
+        # Only unfinished lifecycle states may transition to cancelled.
+        if self._status not in (
+            TaskStatus.PENDING,
+            TaskStatus.IN_PROGRESS,
+            TaskStatus.PAUSED,
+        ):
+            raise InvalidTaskTransitionError(
+                f"Cannot cancel a task from '{self._status.value}'."
+            )
+
+        # Cancellation changes lifecycle state but never completion metadata.
+        self._status = TaskStatus.CANCELLED
