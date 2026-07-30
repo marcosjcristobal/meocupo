@@ -2,6 +2,8 @@
 
 # Dataclass removes constructor boilerplate while preserving a regular Python class.
 from dataclasses import dataclass, field
+# Datetime represents lifecycle instants without coupling the entity to a clock.
+from datetime import datetime
 # UUID provides portable identifiers without requiring a database round trip.
 from uuid import UUID, uuid4
 
@@ -31,6 +33,13 @@ class Task:
         repr=False,
     )
 
+    # Unfinished tasks have no completion instant.
+    _completed_at: datetime | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+
     # Normal is the safest default when no explicit importance is supplied.
     priority: TaskPriority = TaskPriority.NORMAL
 
@@ -40,6 +49,13 @@ class Task:
 
         # Domain methods remain the only writers of the private state.
         return self._status
+
+    @property
+    def completed_at(self) -> datetime | None:
+        """Expose when the task was completed, if completion has occurred."""
+
+        # External layers may read but cannot directly replace this value.
+        return self._completed_at
 
     def __post_init__(self) -> None:
         """Validate invariants immediately after dataclass initialization."""
@@ -83,3 +99,24 @@ class Task:
 
         # Return the task to active work after validating its origin.
         self._status = TaskStatus.IN_PROGRESS
+
+    def complete(self, *, completed_at: datetime) -> None:
+        """Mark an unfinished task as completed at an explicit instant."""
+
+        # Pending, active, and paused tasks are all unfinished and completable.
+        if self._status not in (
+            TaskStatus.PENDING,
+            TaskStatus.IN_PROGRESS,
+            TaskStatus.PAUSED,
+        ):
+            raise InvalidTaskTransitionError(
+                f"Cannot complete a task from '{self._status.value}'."
+            )
+
+        # A timezone-aware datetime maps completion to one absolute instant.
+        if completed_at.tzinfo is None or completed_at.utcoffset() is None:
+            raise ValueError("Completion time must include a timezone.")
+
+        # Update state and completion metadata only after transition validation.
+        self._status = TaskStatus.COMPLETED
+        self._completed_at = completed_at

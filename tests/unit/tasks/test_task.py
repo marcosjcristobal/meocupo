@@ -1,5 +1,7 @@
 """Unit tests for the task domain entity."""
 
+# Datetime provides an explicit, timezone-aware completion instant.
+from datetime import UTC, datetime
 # UUID is the public type used to identify entities across system boundaries.
 from uuid import UUID
 
@@ -147,3 +149,88 @@ def test_pending_task_cannot_resume() -> None:
 
     # Assert: rejection must preserve the pending state.
     assert task.status is TaskStatus.PENDING
+
+def test_pending_task_can_complete_with_timestamp() -> None:
+    """Verify that direct completion records state and time together."""
+
+    # Arrange: use a fixed instant so the test never depends on the real clock.
+    task = Task(title="Buy soil for the pitaya.")
+    completed_at = datetime(2026, 7, 30, 10, 30, tzinfo=UTC)
+
+    # Act: complete the task with an explicit timestamp.
+    task.complete(completed_at=completed_at)
+
+    # Assert: lifecycle state and completion time change atomically.
+    assert task.status is TaskStatus.COMPLETED
+    assert task.completed_at == completed_at
+
+def test_in_progress_task_can_complete() -> None:
+    """Verify that active work may be marked as completed."""
+
+    # Arrange: start the task and choose a deterministic completion instant.
+    task = Task(title="Study Docker.")
+    task.start()
+    completed_at = datetime(2026, 7, 30, 11, 0, tzinfo=UTC)
+
+    # Act: finish the active task.
+    task.complete(completed_at=completed_at)
+
+    # Assert: state and timestamp represent the same completion.
+    assert task.status is TaskStatus.COMPLETED
+    assert task.completed_at == completed_at
+
+
+def test_paused_task_can_complete() -> None:
+    """Verify that paused work may be completed without resuming first."""
+
+    # Arrange: some tasks are finished while formally paused.
+    task = Task(title="Study Docker.")
+    task.start()
+    task.pause()
+    completed_at = datetime(2026, 7, 30, 11, 30, tzinfo=UTC)
+
+    # Act: record completion directly from the paused state.
+    task.complete(completed_at=completed_at)
+
+    # Assert: the paused task reaches its terminal completed state.
+    assert task.status is TaskStatus.COMPLETED
+    assert task.completed_at == completed_at
+
+
+def test_completed_task_cannot_complete_again() -> None:
+    """Ensure that repeated completion cannot rewrite historical metadata."""
+
+    # Arrange: complete the task once with its authoritative timestamp.
+    task = Task(title="Study Docker.")
+    original_completed_at = datetime(2026, 7, 30, 12, 0, tzinfo=UTC)
+    replacement_completed_at = datetime(2026, 7, 30, 13, 0, tzinfo=UTC)
+    task.complete(completed_at=original_completed_at)
+
+    # Act and Assert: a terminal task cannot be completed a second time.
+    with pytest.raises(
+        InvalidTaskTransitionError,
+        match="Cannot complete a task from 'completed'",
+    ):
+        task.complete(completed_at=replacement_completed_at)
+
+    # Assert: rejection preserves the original historical timestamp.
+    assert task.status is TaskStatus.COMPLETED
+    assert task.completed_at == original_completed_at
+
+def test_task_rejects_naive_completion_timestamp() -> None:
+    """Ensure that completion instants always identify an absolute moment."""
+
+    # Arrange: a naive datetime has no timezone or UTC offset.
+    task = Task(title="Study Docker.")
+    naive_completed_at = datetime(2026, 7, 30, 14, 0)
+
+    # Act and Assert: ambiguous timestamps must be rejected.
+    with pytest.raises(
+        ValueError,
+        match="Completion time must include a timezone",
+    ):
+        task.complete(completed_at=naive_completed_at)
+
+    # Assert: validation failure must leave all lifecycle data unchanged.
+    assert task.status is TaskStatus.PENDING
+    assert task.completed_at is None
