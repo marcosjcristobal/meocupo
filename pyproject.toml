@@ -1,0 +1,38 @@
+# This section tells Python which tool can build and install the project.
+[build-system]
+
+# Setuptools provides the standard machinery used to package the application.
+requires = ["setuptools>=75"]
+
+# This is the Python entry point used by packaging tools to build the project.
+build-backend = "setuptools.build_meta"
+
+# This section defines the identity and compatibility requirements of the project.
+[project]
+
+# The distribution name may contain hyphens and identifies the installable project.
+name = "personal-productivity-backend"
+
+# Version 0.1.0 represents the first usable development stage.
+version = "0.1.0"
+
+# This short description explains the project's purpose to packaging tools.
+description = "Modular backend for a personal productivity assistant."
+
+# The application uses Python 3.13 features and type-system improvements.
+requires-python = ">=3.13"
+
+# This section tells Setuptools where Python packages are located.
+[tool.setuptools.packages.find]
+
+# Keeping packages under src prevents accidental imports from the project directory.
+where = ["src"]
+
+# Optional dependencies are installed only for specific development activities.
+[project.optional-dependencies]
+
+# The dev group contains tools used to test and inspect the code, not run production.
+dev = [
+    # Pytest provides a readable framework for automated Python tests.
+    "pytest>=8.3,<9",
+]
