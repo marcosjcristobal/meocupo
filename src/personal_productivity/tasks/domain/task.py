@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 # Import the domain types that define valid task values.
 from personal_productivity.tasks.domain.task_priority import TaskPriority
 from personal_productivity.tasks.domain.task_status import TaskStatus
+from personal_productivity.tasks.domain.task_deadline import TaskDeadline
 
 
 class InvalidTaskTransitionError(ValueError):
@@ -28,6 +29,9 @@ class Task:
 
     # Exact minutes preserve more information than a broad effort category.
     estimated_minutes: int | None = None
+
+    # A validated value object preserves either date-only or exact-time intent.
+    deadline: TaskDeadline | None = None
 
     # The factory generates a fresh identifier for every new task instance.
     id: UUID = field(default_factory=uuid4)
@@ -92,6 +96,13 @@ class Task:
             # An explicit estimate must represent a positive amount of work.
             if self.estimated_minutes <= 0:
                 raise ValueError("Estimated minutes must be greater than zero.")
+
+        # Deadline rules belong to TaskDeadline, so Task only enforces the boundary.
+        if self.deadline is not None and not isinstance(
+            self.deadline,
+            TaskDeadline,
+        ):
+            raise TypeError("Task deadline must be a TaskDeadline.")
 
     def start(self) -> None:
         """Move a pending task into active work."""

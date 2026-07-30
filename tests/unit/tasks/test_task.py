@@ -1,7 +1,7 @@
 """Unit tests for the task domain entity."""
 
 # Datetime provides an explicit, timezone-aware completion instant.
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 # UUID is the public type used to identify entities across system boundaries.
 from uuid import UUID
 
@@ -12,6 +12,7 @@ import pytest
 from personal_productivity.tasks.domain.task import InvalidTaskTransitionError, Task
 from personal_productivity.tasks.domain.task_priority import TaskPriority
 from personal_productivity.tasks.domain.task_status import TaskStatus
+from personal_productivity.tasks.domain.task_deadline import TaskDeadline
 
 
 def test_new_task_uses_safe_lifecycle_defaults() -> None:
@@ -427,4 +428,40 @@ def test_task_rejects_non_integer_estimated_minutes(
         Task(
             title="Study Docker.",
             estimated_minutes=invalid_minutes,
+        )
+
+def test_task_deadline_is_optional() -> None:
+    """Verify that a task may exist before a deadline is assigned."""
+
+    # Act: create a task without temporal constraints.
+    task = Task(title="Study Docker.")
+
+    # Assert: no deadline has one explicit representation.
+    assert task.deadline is None
+
+
+def test_task_accepts_valid_deadline_value_object() -> None:
+    """Verify that Task stores an already validated deadline."""
+
+    # Arrange: preserve the user's date-only intent.
+    deadline = TaskDeadline(due_on=date(2026, 8, 15))
+
+    # Act: assign the value object during task creation.
+    task = Task(title="Renew the insurance.", deadline=deadline)
+
+    # Assert: the entity retains the immutable value object.
+    assert task.deadline == deadline
+
+
+def test_task_rejects_raw_deadline_values() -> None:
+    """Ensure that callers cannot bypass TaskDeadline validation."""
+
+    # Act and Assert: raw dates must first become validated value objects.
+    with pytest.raises(
+        TypeError,
+        match="Task deadline must be a TaskDeadline",
+    ):
+        Task(
+            title="Renew the insurance.",
+            deadline=date(2026, 8, 15),
         )
