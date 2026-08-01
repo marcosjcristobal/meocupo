@@ -562,3 +562,32 @@ def test_cancelled_task_cannot_clear_deadline() -> None:
 
     # Assert: rejection preserves the original deadline.
     assert task.deadline == original_deadline
+
+def test_task_accepts_explicit_priority() -> None:
+    """Verify that callers may assign a valid domain priority."""
+
+    # Act: create an important task using the domain enum.
+    task = Task(
+        title="Renew the insurance.",
+        priority=TaskPriority.CRITICAL,
+    )
+
+    # Assert: preserve the explicit priority instead of using the default.
+    assert task.priority is TaskPriority.CRITICAL
+
+
+@pytest.mark.parametrize("invalid_priority", ["critical", 1, None])
+def test_task_rejects_non_priority_runtime_values(
+    invalid_priority: object,
+) -> None:
+    """Ensure that arbitrary values cannot bypass the priority vocabulary."""
+
+    # Act and Assert: only TaskPriority members cross the domain boundary.
+    with pytest.raises(
+        TypeError,
+        match="Task priority must be a TaskPriority",
+    ):
+        Task(
+            title="Renew the insurance.",
+            priority=invalid_priority,
+        )

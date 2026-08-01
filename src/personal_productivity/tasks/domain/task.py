@@ -119,6 +119,10 @@ class Task:
         # Persist the canonical representation used by every external channel.
         self.title = normalized_title
 
+        # Runtime validation prevents raw strings from bypassing the domain enum.
+        if not isinstance(self.priority, TaskPriority):
+            raise TypeError("Task priority must be a TaskPriority.")
+
         # Validate runtime type because annotations alone do not enforce it.
         if self.estimated_minutes is not None:
             if isinstance(self.estimated_minutes, bool) or not isinstance(
