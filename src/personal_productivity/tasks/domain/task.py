@@ -3,7 +3,7 @@
 # Dataclass removes constructor boilerplate while preserving a regular Python class.
 from dataclasses import dataclass, field
 # Datetime represents lifecycle instants without coupling the entity to a clock.
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 # UUID provides portable identifiers without requiring a database round trip.
 from uuid import UUID, uuid4
 
@@ -12,6 +12,16 @@ from personal_productivity.tasks.domain.task_priority import TaskPriority
 from personal_productivity.tasks.domain.task_status import TaskStatus
 from personal_productivity.tasks.domain.task_deadline import TaskDeadline
 
+# Urgency is calculated from time and is never assigned manually.
+from personal_productivity.tasks.domain.task_urgency import TaskUrgency
+
+
+# Twenty-four hours define when an exact deadline requires immediate attention.
+_IMMINENT_WINDOW = timedelta(hours=24)
+
+# Three days provide an initial warning without creating excessive noise.
+_UPCOMING_WINDOW = timedelta(days=3)
+
 
 class InvalidTaskTransitionError(ValueError):
     """Raised when a requested task lifecycle transition is not allowed."""
@@ -19,6 +29,7 @@ class InvalidTaskTransitionError(ValueError):
 
 class TaskNotEditableError(ValueError):
     """Raised when a terminal task receives a planning modification."""
+
 
 @dataclass(slots=True, kw_only=True, eq=False)
 class Task:
@@ -69,6 +80,59 @@ class Task:
 
         # External layers may read but cannot directly replace this value.
         return self._completed_at
+
+    def calculate_urgency(
+        self,
+        *,
+        today: date,
+        now: datetime,
+    ) -> TaskUrgency:
+        """Calculate temporal pressure without storing state that may become stale."""
+
+        # Terminal outcomes no longer require operational attention.
+        if self._status in (
+            TaskStatus.COMPLETED,
+            TaskStatus.CANCELLED,
+        ):
+            return TaskUrgency.NOT_URGENT
+
+        # A task without a deadline has no deadline-driven urgency.
+        if self.deadline is None:
+            return TaskUrgency.NOT_URGENT
+
+        # Reuse the existing overdue rule as the strongest temporal condition.
+        if self.is_overdue(today=today, now=now):
+            return TaskUrgency.OVERDUE
+
+        # Date-only deadlines use calendar distance instead of invented times.
+        if self.deadline.due_on is not None:
+            remaining_days = (self.deadline.due_on - today).days
+
+            # A task due on the current local date needs immediate attention.
+            if remaining_days == 0:
+                return TaskUrgency.IMMINENT
+
+            # The following three calendar days form the initial warning window.
+            if remaining_days <= _UPCOMING_WINDOW.days:
+                return TaskUrgency.UPCOMING
+
+            # A later calendar deadline is outside every active window.
+            return TaskUrgency.NOT_URGENT
+
+        # TaskDeadline guarantees that the remaining variant contains due_at.
+        assert self.deadline.due_at is not None
+        remaining_time = self.deadline.due_at - now
+
+        # Exact deadlines within twenty-four hours need immediate attention.
+        if remaining_time <= _IMMINENT_WINDOW:
+            return TaskUrgency.IMMINENT
+
+        # Exact deadlines within three days belong to the warning window.
+        if remaining_time <= _UPCOMING_WINDOW:
+            return TaskUrgency.UPCOMING
+
+        # Exact deadlines beyond three days have no current urgency.
+        return TaskUrgency.NOT_URGENT
 
     def is_overdue(
         self,
