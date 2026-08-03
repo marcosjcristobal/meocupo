@@ -27,6 +27,10 @@ class InvalidTaskTransitionError(ValueError):
     """Raised when a requested task lifecycle transition is not allowed."""
 
 
+class InvalidTaskPostponementError(ValueError):
+    """Raised when a deadline change does not represent valid postponement."""
+
+
 class TaskNotEditableError(ValueError):
     """Raised when a terminal task receives a planning modification."""
 
@@ -64,6 +68,13 @@ class Task:
         repr=False,
     )
 
+    # The aggregate count supports postponement analytics without storing history.
+    _postponement_count: int = field(
+        default=0,
+        init=False,
+        repr=False,
+    )
+
     # Normal is the safest default when no explicit importance is supplied.
     priority: TaskPriority = TaskPriority.NORMAL
 
@@ -80,6 +91,15 @@ class Task:
 
         # External layers may read but cannot directly replace this value.
         return self._completed_at
+
+
+    @property
+    def postponement_count(self) -> int:
+        """Expose how many explicit postponements the task has received."""
+
+        # External layers may read analytics data but cannot rewrite the count.
+        return self._postponement_count
+
 
     def calculate_urgency(
         self,
@@ -278,6 +298,58 @@ class Task:
 
         # Cancellation changes lifecycle state but never completion metadata.
         self._status = TaskStatus.CANCELLED
+
+    def postpone(self, *, deadline: TaskDeadline) -> None:
+        """Move the task deadline through an explicit postponement operation."""
+
+        # Runtime validation prevents raw values from bypassing TaskDeadline rules.
+        if not isinstance(deadline, TaskDeadline):
+            raise TypeError("Task deadline must be a TaskDeadline.")
+
+        # Terminal tasks preserve the planning that produced their final outcome.
+        self._ensure_editable(action="postpone deadline")
+
+        # Postponement requires an existing commitment to move forward.
+        if self.deadline is None:
+            raise InvalidTaskPostponementError(
+                "Cannot postpone a task without an existing deadline."
+            )
+
+        # Compare only deadlines that preserve the same temporal precision.
+        current_is_date_only = self.deadline.due_on is not None
+        proposed_is_date_only = deadline.due_on is not None
+
+        # Cross-precision changes require a separate rescheduling operation.
+        if current_is_date_only != proposed_is_date_only:
+            raise InvalidTaskPostponementError(
+                "Postponement must preserve deadline precision."
+            )
+
+        # Calendar-only postponement must move to a strictly later date.
+        if (
+            self.deadline.due_on is not None
+            and deadline.due_on is not None
+            and deadline.due_on <= self.deadline.due_on
+        ):
+            raise InvalidTaskPostponementError(
+                "Postponed deadline must be later than the current deadline."
+            )
+
+        # Exact postponement must move to a strictly later absolute instant.
+        if (
+            self.deadline.due_at is not None
+            and deadline.due_at is not None
+            and deadline.due_at <= self.deadline.due_at
+        ):
+            raise InvalidTaskPostponementError(
+                "Postponed deadline must be later than the current deadline."
+            )
+
+        # Replace the immutable deadline value as one atomic planning change.
+        self.deadline = deadline
+
+        # Count only successful explicit postponement operations.
+        self._postponement_count += 1
 
     def set_deadline(self, deadline: TaskDeadline) -> None:
         """Assign or replace the deadline of an unfinished task."""
