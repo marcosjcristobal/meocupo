@@ -15,6 +15,8 @@ from personal_productivity.tasks.domain.task_deadline import TaskDeadline
 # Urgency is calculated from time and is never assigned manually.
 from personal_productivity.tasks.domain.task_urgency import TaskUrgency
 
+# Time blocks represent optional calendar allocations for planned work.
+from personal_productivity.tasks.domain.task_time_block import TaskTimeBlock
 
 # Twenty-four hours define when an exact deadline requires immediate attention.
 _IMMINENT_WINDOW = timedelta(hours=24)
@@ -50,6 +52,9 @@ class Task:
 
     # A validated value object preserves either date-only or exact-time intent.
     deadline: TaskDeadline | None = None
+
+    # Planned tasks may reserve one exact interval without becoming events.
+    time_block: TaskTimeBlock | None = None
 
     # The factory generates a fresh identifier for every new task instance.
     id: UUID = field(default_factory=uuid4)
@@ -226,6 +231,15 @@ class Task:
         ):
             raise TypeError("Task deadline must be a TaskDeadline.")
 
+        # Calendar planning must cross the boundary as a validated value object.
+        if self.time_block is not None and not isinstance(
+            self.time_block,
+            TaskTimeBlock,
+        ):
+            raise TypeError(
+                "Task time block must be a TaskTimeBlock."
+            )
+
     def start(self) -> None:
         """Move a pending task into active work."""
 
@@ -298,6 +312,30 @@ class Task:
 
         # Cancellation changes lifecycle state but never completion metadata.
         self._status = TaskStatus.CANCELLED
+
+    def schedule(self, *, time_block: TaskTimeBlock) -> None:
+        """Assign or replace the calendar interval of an unfinished task."""
+
+        # Runtime validation prevents raw intervals from bypassing domain rules.
+        if not isinstance(time_block, TaskTimeBlock):
+            raise TypeError(
+                "Task time block must be a TaskTimeBlock."
+            )
+
+        # Terminal tasks preserve the calendar context of their final outcome.
+        self._ensure_editable(action="change calendar allocation")
+
+        # Replace the immutable value as one atomic planning operation.
+        self.time_block = time_block
+
+    def unschedule(self) -> None:
+        """Remove calendar allocation without cancelling the task."""
+
+        # Terminal tasks preserve the calendar context of their final outcome.
+        self._ensure_editable(action="change calendar allocation")
+
+        # None is the canonical representation for an unscheduled task.
+        self.time_block = None
 
     def postpone(self, *, deadline: TaskDeadline) -> None:
         """Move the task deadline through an explicit postponement operation."""
