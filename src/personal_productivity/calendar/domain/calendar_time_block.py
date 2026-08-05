@@ -1,20 +1,20 @@
-"""Calendar time block value object for planned task work."""
+"""Reusable calendar time block value object."""
 
 # Dataclass provides value equality and an explicit immutable structure.
 from dataclasses import dataclass
 
-# Datetime represents the exact boundaries of planned calendar work.
+# Datetime represents the exact boundaries of calendar allocations.
 from datetime import datetime
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class TaskTimeBlock:
-    """Represent one exact calendar interval reserved for a task."""
+class CalendarTimeBlock:
+    """Represent one exact interval reserved in the calendar."""
 
-    # The starting instant marks when planned work should begin.
+    # The starting instant marks when the calendar allocation begins.
     starts_at: datetime
 
-    # The ending instant marks when the reserved work period finishes.
+    # The ending instant marks when the calendar allocation finishes.
     ends_at: datetime
 
     def __post_init__(self) -> None:
@@ -44,13 +44,13 @@ class TaskTimeBlock:
                 "Time block end must be later than its start."
             )
 
-    def overlaps(self, other: "TaskTimeBlock") -> bool:
+    def overlaps(self, other: "CalendarTimeBlock") -> bool:
         """Return whether two blocks share a positive amount of time."""
 
         # Runtime validation prevents arbitrary values from entering comparison.
-        if not isinstance(other, TaskTimeBlock):
+        if not isinstance(other, CalendarTimeBlock):
             raise TypeError(
-                "Other value must be a TaskTimeBlock."
+                "Other value must be a CalendarTimeBlock."
             )
 
         # Strict comparisons make touching boundaries non-overlapping.

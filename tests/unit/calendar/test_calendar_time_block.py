@@ -1,4 +1,4 @@
-"""Unit tests for calendar time blocks assigned to tasks."""
+"""Unit tests for reusable calendar time blocks."""
 
 # Datetime provides deterministic and globally comparable schedule instants.
 from datetime import UTC, date, datetime
@@ -7,7 +7,9 @@ from datetime import UTC, date, datetime
 import pytest
 
 # Import the value object through its absolute domain package path.
-from personal_productivity.tasks.domain.task_time_block import TaskTimeBlock
+from personal_productivity.calendar.domain.calendar_time_block import (
+    CalendarTimeBlock,
+)
 
 
 def test_time_block_preserves_a_valid_interval() -> None:
@@ -18,7 +20,7 @@ def test_time_block_preserves_a_valid_interval() -> None:
     ends_at = datetime(2026, 8, 5, 19, 30, tzinfo=UTC)
 
     # Act: create one immutable calendar allocation.
-    time_block = TaskTimeBlock(
+    time_block = CalendarTimeBlock(
         starts_at=starts_at,
         ends_at=ends_at,
     )
@@ -26,6 +28,7 @@ def test_time_block_preserves_a_valid_interval() -> None:
     # Assert: the value object preserves the complete interval.
     assert time_block.starts_at == starts_at
     assert time_block.ends_at == ends_at
+
 
 @pytest.mark.parametrize(
     ("starts_at", "ends_at"),
@@ -65,10 +68,11 @@ def test_time_block_rejects_non_datetime_boundaries(
         TypeError,
         match="Time block boundaries must be datetimes",
     ):
-        TaskTimeBlock(
+        CalendarTimeBlock(
             starts_at=starts_at,
             ends_at=ends_at,
         )
+
 
 @pytest.mark.parametrize(
     ("starts_at", "ends_at"),
@@ -98,10 +102,11 @@ def test_time_block_rejects_timezone_free_boundaries(
         ValueError,
         match="Time block boundaries must include a timezone",
     ):
-        TaskTimeBlock(
+        CalendarTimeBlock(
             starts_at=starts_at,
             ends_at=ends_at,
         )
+
 
 @pytest.mark.parametrize(
     "ends_at",
@@ -127,7 +132,7 @@ def test_time_block_requires_end_after_start(
         ValueError,
         match="Time block end must be later than its start",
     ):
-        TaskTimeBlock(
+        CalendarTimeBlock(
             starts_at=starts_at,
             ends_at=ends_at,
         )
@@ -137,11 +142,11 @@ def test_partially_overlapping_time_blocks_overlap() -> None:
     """Verify that intervals sharing real elapsed time overlap symmetrically."""
 
     # Arrange: create two blocks that share thirty minutes.
-    first_block = TaskTimeBlock(
+    first_block = CalendarTimeBlock(
         starts_at=datetime(2026, 8, 5, 18, 0, tzinfo=UTC),
         ends_at=datetime(2026, 8, 5, 19, 0, tzinfo=UTC),
     )
-    second_block = TaskTimeBlock(
+    second_block = CalendarTimeBlock(
         starts_at=datetime(2026, 8, 5, 18, 30, tzinfo=UTC),
         ends_at=datetime(2026, 8, 5, 19, 30, tzinfo=UTC),
     )
@@ -149,6 +154,7 @@ def test_partially_overlapping_time_blocks_overlap() -> None:
     # Act and Assert: overlap cannot depend on comparison direction.
     assert first_block.overlaps(second_block) is True
     assert second_block.overlaps(first_block) is True
+
 
 @pytest.mark.parametrize(
     ("other_starts_at", "other_ends_at", "expected"),
@@ -207,11 +213,11 @@ def test_time_block_overlap_uses_half_open_boundaries(
     """Verify separation, contact, containment, and identical intervals."""
 
     # Arrange: use one fixed reference block for every boundary scenario.
-    reference_block = TaskTimeBlock(
+    reference_block = CalendarTimeBlock(
         starts_at=datetime(2026, 8, 5, 18, 0, tzinfo=UTC),
         ends_at=datetime(2026, 8, 5, 19, 0, tzinfo=UTC),
     )
-    other_block = TaskTimeBlock(
+    other_block = CalendarTimeBlock(
         starts_at=other_starts_at,
         ends_at=other_ends_at,
     )
@@ -241,7 +247,7 @@ def test_overlap_rejects_non_time_block_values(
     """Ensure that interval comparison cannot bypass the value object."""
 
     # Arrange: create one valid reference interval.
-    reference_block = TaskTimeBlock(
+    reference_block = CalendarTimeBlock(
         starts_at=datetime(2026, 8, 5, 18, 0, tzinfo=UTC),
         ends_at=datetime(2026, 8, 5, 19, 0, tzinfo=UTC),
     )
@@ -249,6 +255,6 @@ def test_overlap_rejects_non_time_block_values(
     # Act and Assert: overlap requires another validated time block.
     with pytest.raises(
         TypeError,
-        match="Other value must be a TaskTimeBlock",
+        match="Other value must be a CalendarTimeBlock",
     ):
         reference_block.overlaps(invalid_other)

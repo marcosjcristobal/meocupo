@@ -15,8 +15,10 @@ from personal_productivity.tasks.domain.task_deadline import TaskDeadline
 # Urgency is calculated from time and is never assigned manually.
 from personal_productivity.tasks.domain.task_urgency import TaskUrgency
 
-# Time blocks represent optional calendar allocations for planned work.
-from personal_productivity.tasks.domain.task_time_block import TaskTimeBlock
+# Calendar intervals are shared by tasks and future event entities.
+from personal_productivity.calendar.domain.calendar_time_block import (
+    CalendarTimeBlock,
+)
 
 # Twenty-four hours define when an exact deadline requires immediate attention.
 _IMMINENT_WINDOW = timedelta(hours=24)
@@ -54,7 +56,7 @@ class Task:
     deadline: TaskDeadline | None = None
 
     # Planned tasks may reserve one exact interval without becoming events.
-    time_block: TaskTimeBlock | None = None
+    time_block: CalendarTimeBlock | None = None
 
     # The factory generates a fresh identifier for every new task instance.
     id: UUID = field(default_factory=uuid4)
@@ -234,10 +236,10 @@ class Task:
         # Calendar planning must cross the boundary as a validated value object.
         if self.time_block is not None and not isinstance(
             self.time_block,
-            TaskTimeBlock,
+            CalendarTimeBlock,
         ):
             raise TypeError(
-                "Task time block must be a TaskTimeBlock."
+                "Task time block must be a CalendarTimeBlock."
             )
 
     def start(self) -> None:
@@ -313,13 +315,13 @@ class Task:
         # Cancellation changes lifecycle state but never completion metadata.
         self._status = TaskStatus.CANCELLED
 
-    def schedule(self, *, time_block: TaskTimeBlock) -> None:
+    def schedule(self, *, time_block: CalendarTimeBlock) -> None:
         """Assign or replace the calendar interval of an unfinished task."""
 
         # Runtime validation prevents raw intervals from bypassing domain rules.
-        if not isinstance(time_block, TaskTimeBlock):
+        if not isinstance(time_block, CalendarTimeBlock):
             raise TypeError(
-                "Task time block must be a TaskTimeBlock."
+                "Task time block must be a CalendarTimeBlock."
             )
 
         # Terminal tasks preserve the calendar context of their final outcome.
