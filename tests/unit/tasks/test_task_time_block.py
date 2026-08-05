@@ -131,3 +131,124 @@ def test_time_block_requires_end_after_start(
             starts_at=starts_at,
             ends_at=ends_at,
         )
+
+
+def test_partially_overlapping_time_blocks_overlap() -> None:
+    """Verify that intervals sharing real elapsed time overlap symmetrically."""
+
+    # Arrange: create two blocks that share thirty minutes.
+    first_block = TaskTimeBlock(
+        starts_at=datetime(2026, 8, 5, 18, 0, tzinfo=UTC),
+        ends_at=datetime(2026, 8, 5, 19, 0, tzinfo=UTC),
+    )
+    second_block = TaskTimeBlock(
+        starts_at=datetime(2026, 8, 5, 18, 30, tzinfo=UTC),
+        ends_at=datetime(2026, 8, 5, 19, 30, tzinfo=UTC),
+    )
+
+    # Act and Assert: overlap cannot depend on comparison direction.
+    assert first_block.overlaps(second_block) is True
+    assert second_block.overlaps(first_block) is True
+
+@pytest.mark.parametrize(
+    ("other_starts_at", "other_ends_at", "expected"),
+    [
+        (
+            datetime(2026, 8, 5, 16, 0, tzinfo=UTC),
+            datetime(2026, 8, 5, 17, 0, tzinfo=UTC),
+            False,
+        ),
+        (
+            datetime(2026, 8, 5, 17, 0, tzinfo=UTC),
+            datetime(2026, 8, 5, 18, 0, tzinfo=UTC),
+            False,
+        ),
+        (
+            datetime(2026, 8, 5, 19, 0, tzinfo=UTC),
+            datetime(2026, 8, 5, 20, 0, tzinfo=UTC),
+            False,
+        ),
+        (
+            datetime(2026, 8, 5, 20, 0, tzinfo=UTC),
+            datetime(2026, 8, 5, 21, 0, tzinfo=UTC),
+            False,
+        ),
+        (
+            datetime(2026, 8, 5, 18, 15, tzinfo=UTC),
+            datetime(2026, 8, 5, 18, 45, tzinfo=UTC),
+            True,
+        ),
+        (
+            datetime(2026, 8, 5, 17, 30, tzinfo=UTC),
+            datetime(2026, 8, 5, 19, 30, tzinfo=UTC),
+            True,
+        ),
+        (
+            datetime(2026, 8, 5, 18, 0, tzinfo=UTC),
+            datetime(2026, 8, 5, 19, 0, tzinfo=UTC),
+            True,
+        ),
+    ],
+    ids=[
+        "separate_before",
+        "touches_start",
+        "touches_end",
+        "separate_after",
+        "contained",
+        "contains_reference",
+        "identical",
+    ],
+)
+def test_time_block_overlap_uses_half_open_boundaries(
+    other_starts_at: datetime,
+    other_ends_at: datetime,
+    expected: bool,
+) -> None:
+    """Verify separation, contact, containment, and identical intervals."""
+
+    # Arrange: use one fixed reference block for every boundary scenario.
+    reference_block = TaskTimeBlock(
+        starts_at=datetime(2026, 8, 5, 18, 0, tzinfo=UTC),
+        ends_at=datetime(2026, 8, 5, 19, 0, tzinfo=UTC),
+    )
+    other_block = TaskTimeBlock(
+        starts_at=other_starts_at,
+        ends_at=other_ends_at,
+    )
+
+    # Act and Assert: only shared positive duration represents overlap.
+    assert reference_block.overlaps(other_block) is expected
+
+@pytest.mark.parametrize(
+    "invalid_other",
+    [
+        None,
+        "18:00/19:00",
+        (
+            datetime(2026, 8, 5, 18, 0, tzinfo=UTC),
+            datetime(2026, 8, 5, 19, 0, tzinfo=UTC),
+        ),
+    ],
+    ids=[
+        "none",
+        "text",
+        "tuple",
+    ],
+)
+def test_overlap_rejects_non_time_block_values(
+    invalid_other: object,
+) -> None:
+    """Ensure that interval comparison cannot bypass the value object."""
+
+    # Arrange: create one valid reference interval.
+    reference_block = TaskTimeBlock(
+        starts_at=datetime(2026, 8, 5, 18, 0, tzinfo=UTC),
+        ends_at=datetime(2026, 8, 5, 19, 0, tzinfo=UTC),
+    )
+
+    # Act and Assert: overlap requires another validated time block.
+    with pytest.raises(
+        TypeError,
+        match="Other value must be a TaskTimeBlock",
+    ):
+        reference_block.overlaps(invalid_other)

@@ -43,3 +43,18 @@ class TaskTimeBlock:
             raise ValueError(
                 "Time block end must be later than its start."
             )
+
+    def overlaps(self, other: "TaskTimeBlock") -> bool:
+        """Return whether two blocks share a positive amount of time."""
+
+        # Runtime validation prevents arbitrary values from entering comparison.
+        if not isinstance(other, TaskTimeBlock):
+            raise TypeError(
+                "Other value must be a TaskTimeBlock."
+            )
+
+        # Strict comparisons make touching boundaries non-overlapping.
+        return (
+            self.starts_at < other.ends_at
+            and other.starts_at < self.ends_at
+        )
