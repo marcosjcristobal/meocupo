@@ -258,3 +258,102 @@ def test_overlap_rejects_non_time_block_values(
         match="Other value must be a CalendarTimeBlock",
     ):
         reference_block.overlaps(invalid_other)
+
+@pytest.mark.parametrize(
+    ("instant", "expected_contains"),
+    [
+        (
+            datetime(2026, 8, 5, 17, 59, tzinfo=UTC),
+            False,
+        ),
+        (
+            datetime(2026, 8, 5, 18, 0, tzinfo=UTC),
+            True,
+        ),
+        (
+            datetime(2026, 8, 5, 18, 30, tzinfo=UTC),
+            True,
+        ),
+        (
+            datetime(2026, 8, 5, 19, 0, tzinfo=UTC),
+            False,
+        ),
+        (
+            datetime(2026, 8, 5, 19, 1, tzinfo=UTC),
+            False,
+        ),
+    ],
+    ids=[
+        "before_start",
+        "at_start",
+        "inside",
+        "at_end",
+        "after_end",
+    ],
+)
+def test_time_block_contains_instants_using_half_open_boundaries(
+    instant: datetime,
+    expected_contains: bool,
+) -> None:
+    """Verify membership using an inclusive start and exclusive end."""
+
+    # Arrange: reserve one exact hour in the calendar.
+    time_block = CalendarTimeBlock(
+        starts_at=datetime(2026, 8, 5, 18, 0, tzinfo=UTC),
+        ends_at=datetime(2026, 8, 5, 19, 0, tzinfo=UTC),
+    )
+
+    # Act: ask the interval whether it contains the reference instant.
+    actual_contains = time_block.contains(instant)
+
+    # Assert: membership follows the shared half-open interval convention.
+    assert actual_contains is expected_contains
+
+@pytest.mark.parametrize(
+    "invalid_instant",
+    [
+        None,
+        date(2026, 8, 5),
+        "2026-08-05T18:30:00Z",
+    ],
+    ids=[
+        "none",
+        "date",
+        "text",
+    ],
+)
+def test_contains_rejects_non_datetime_values(
+    invalid_instant: object,
+) -> None:
+    """Ensure that interval membership requires an exact instant."""
+
+    # Arrange: create one valid allocation for the attempted comparison.
+    time_block = CalendarTimeBlock(
+        starts_at=datetime(2026, 8, 5, 18, 0, tzinfo=UTC),
+        ends_at=datetime(2026, 8, 5, 19, 0, tzinfo=UTC),
+    )
+
+    # Act and Assert: raw values cannot enter temporal comparisons.
+    with pytest.raises(
+        TypeError,
+        match="Calendar instant must be a datetime",
+    ):
+        time_block.contains(invalid_instant)
+
+
+def test_contains_rejects_timezone_free_instant() -> None:
+    """Ensure that interval membership compares absolute moments."""
+
+    # Arrange: create one valid allocation and one ambiguous local time.
+    time_block = CalendarTimeBlock(
+        starts_at=datetime(2026, 8, 5, 18, 0, tzinfo=UTC),
+        ends_at=datetime(2026, 8, 5, 19, 0, tzinfo=UTC),
+    )
+    naive_instant = datetime(2026, 8, 5, 18, 30)
+
+    # Act and Assert: a timezone-free value has no absolute meaning.
+    with pytest.raises(
+        ValueError,
+        match="Calendar instant must include a timezone",
+    ):
+        time_block.contains(naive_instant)

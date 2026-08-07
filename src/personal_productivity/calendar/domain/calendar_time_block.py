@@ -44,6 +44,25 @@ class CalendarTimeBlock:
                 "Time block end must be later than its start."
             )
 
+    def contains(self, instant: datetime) -> bool:
+        """Return whether an instant belongs to this calendar allocation."""
+
+        # Runtime validation prevents raw values from entering comparison.
+        if not isinstance(instant, datetime):
+            raise TypeError("Calendar instant must be a datetime.")
+
+        # Membership requires an absolute and globally comparable moment.
+        if (
+            instant.tzinfo is None
+            or instant.utcoffset() is None
+        ):
+            raise ValueError(
+                "Calendar instant must include a timezone."
+            )
+
+        # Half-open boundaries include the start and exclude the end.
+        return self.starts_at <= instant < self.ends_at
+
     def overlaps(self, other: "CalendarTimeBlock") -> bool:
         """Return whether two blocks share a positive amount of time."""
 

@@ -433,3 +433,77 @@ def test_cancelled_event_cannot_be_rescheduled() -> None:
     # Assert: rejection preserves both scheduling and lifecycle state.
     assert event.time_block is original_time_block
     assert event.status is EventStatus.CANCELLED
+
+@pytest.mark.parametrize(
+    ("instant", "expected_ongoing"),
+    [
+        (
+            datetime(2026, 8, 6, 17, 59, tzinfo=UTC),
+            False,
+        ),
+        (
+            datetime(2026, 8, 6, 18, 0, tzinfo=UTC),
+            True,
+        ),
+        (
+            datetime(2026, 8, 6, 18, 45, tzinfo=UTC),
+            True,
+        ),
+        (
+            datetime(2026, 8, 6, 19, 30, tzinfo=UTC),
+            False,
+        ),
+        (
+            datetime(2026, 8, 6, 19, 31, tzinfo=UTC),
+            False,
+        ),
+    ],
+    ids=[
+        "before_start",
+        "at_start",
+        "inside",
+        "at_end",
+        "after_end",
+    ],
+)
+def test_scheduled_event_derives_whether_it_is_ongoing(
+    instant: datetime,
+    expected_ongoing: bool,
+) -> None:
+    """Verify that ongoing state is derived from the calendar interval."""
+
+    # Arrange: create an event that occupies one exact interval.
+    event = Event(
+        title="Boxing training.",
+        time_block=CalendarTimeBlock(
+            starts_at=datetime(2026, 8, 6, 18, 0, tzinfo=UTC),
+            ends_at=datetime(2026, 8, 6, 19, 30, tzinfo=UTC),
+        ),
+    )
+
+    # Act: derive temporal state at an explicit deterministic instant.
+    actual_ongoing = event.is_ongoing(at=instant)
+
+    # Assert: the event follows the shared half-open interval rules.
+    assert actual_ongoing is expected_ongoing
+
+def test_cancelled_event_is_not_ongoing_inside_original_interval() -> None:
+    """Ensure that cancellation overrides temporal interval membership."""
+
+    # Arrange: cancel an event whose original interval contains the query time.
+    event = Event(
+        title="Boxing training.",
+        time_block=CalendarTimeBlock(
+            starts_at=datetime(2026, 8, 6, 18, 0, tzinfo=UTC),
+            ends_at=datetime(2026, 8, 6, 19, 30, tzinfo=UTC),
+        ),
+    )
+    event.cancel()
+
+    # Act: evaluate the cancelled event during its former allocation.
+    actual_ongoing = event.is_ongoing(
+        at=datetime(2026, 8, 6, 18, 45, tzinfo=UTC),
+    )
+
+    # Assert: cancelled activities never count as currently happening.
+    assert actual_ongoing is False

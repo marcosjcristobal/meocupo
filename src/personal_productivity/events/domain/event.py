@@ -3,6 +3,9 @@
 # Dataclass removes constructor boilerplate while preserving a regular class.
 from dataclasses import dataclass, field
 
+# Datetime identifies the exact instant used by temporal event queries.
+from datetime import datetime
+
 # UUID provides portable identity without requiring a database round trip.
 from uuid import UUID, uuid4
 
@@ -11,6 +14,7 @@ from personal_productivity.calendar.domain.calendar_time_block import (
     CalendarTimeBlock,
 )
 from personal_productivity.events.domain.event_status import EventStatus
+
 
 class InvalidEventTransitionError(ValueError):
     """Raised when a requested event lifecycle transition is not allowed."""
@@ -76,7 +80,6 @@ class Event:
             # Blank descriptions share one canonical absence representation.
             self.description = normalized_description or None
 
-
     def cancel(self) -> None:
         """Cancel an event that is still expected to take place."""
 
@@ -110,6 +113,22 @@ class Event:
 
         # Replace the allocation only after every domain rule has passed.
         self.time_block = time_block
+
+    def is_ongoing(
+        self,
+        *,
+        at: datetime,
+    ) -> bool:
+        """Return whether the event is active at the requested instant."""
+
+        # Delegate validation and interval mathematics to the calendar object.
+        occurs_during_interval = self.time_block.contains(at)
+
+        # Cancellation overrides the event's original temporal allocation.
+        return (
+            self._status is EventStatus.SCHEDULED
+            and occurs_during_interval
+        )
 
     @property
     def status(self) -> EventStatus:
