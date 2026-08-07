@@ -10,6 +10,10 @@ from uuid import UUID
 from personal_productivity.tasks.domain.task import Task
 
 
+class TaskAlreadyExistsError(RuntimeError):
+    """Raised when storage already contains the task identity."""
+
+
 class TaskRepository(Protocol):
     """Define how task use cases communicate with persistent storage."""
 

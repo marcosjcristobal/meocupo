@@ -1,0 +1,1 @@
+"""Repository adapters implementing task persistence ports."""
