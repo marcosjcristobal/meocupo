@@ -46,3 +46,9 @@ class InMemoryTaskRepository:
 
         # Dictionary lookup represents absence without raising a storage error.
         return self._tasks_by_id.get(task_id)
+
+    def list_all(self) -> tuple[Task, ...]:
+        """Return an immutable snapshot of every stored task."""
+
+        # Copy dictionary values into a tuple to protect internal storage.
+        return tuple(self._tasks_by_id.values())

@@ -28,3 +28,9 @@ class TaskRepository(Protocol):
 
         # Concrete adapters decide how stored entities are located.
         ...
+
+    def list_all(self) -> tuple[Task, ...]:
+        """Return a snapshot containing every stored task."""
+
+        # Concrete adapters decide how task collections are loaded.
+        ...

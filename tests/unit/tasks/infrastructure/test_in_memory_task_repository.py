@@ -128,3 +128,25 @@ def test_add_rejects_duplicate_task_identity() -> None:
 
     # Assert: rejection preserves the original authoritative entity.
     assert repository.get_by_id(existing_task.id) is existing_task
+
+
+def test_list_all_returns_immutable_task_snapshot() -> None:
+    """Verify that collection retrieval does not expose mutable storage."""
+
+    # Arrange: store two independent domain entities.
+    repository = InMemoryTaskRepository()
+    first_task = Task(title="Study Docker.")
+    second_task = Task(title="Buy soil for the pitaya.")
+    repository.add(first_task)
+    repository.add(second_task)
+
+    # Act: request a snapshot of every stored task.
+    task_snapshot = repository.list_all()
+
+    # Assert: the adapter returns an immutable collection.
+    assert isinstance(task_snapshot, tuple)
+
+    # Assert: every stored entity appears exactly once.
+    assert len(task_snapshot) == 2
+    assert first_task in task_snapshot
+    assert second_task in task_snapshot
