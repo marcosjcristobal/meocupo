@@ -11,6 +11,12 @@ from personal_productivity.tasks.application.ports.task_repository import (
 # The application returns complete domain entities.
 from personal_productivity.tasks.domain.task import Task
 
+# TaskStatus defines the valid persisted lifecycle filters.
+from personal_productivity.tasks.domain.task_status import TaskStatus
+
+# TaskPriority defines the valid explicit importance filters.
+from personal_productivity.tasks.domain.task_priority import TaskPriority
+
 
 @dataclass(slots=True, kw_only=True)
 class ListTasks:
@@ -19,11 +25,46 @@ class ListTasks:
     # The caller injects any adapter satisfying the repository contract.
     repository: TaskRepository
 
-    def execute(self) -> tuple[Task, ...]:
-        """Return every task currently available in persistence."""
+    def execute(
+        self,
+        *,
+        status: TaskStatus | None = None,
+        priority: TaskPriority | None = None,
+    ) -> tuple[Task, ...]:
+        """Return tasks optionally filtered by status and priority."""
 
-        # Collection loading belongs to the repository implementation.
+        # Runtime validation rejects malformed status before persistence.
+        if status is not None and not isinstance(status, TaskStatus):
+            raise TypeError(
+                "Task status filter must be a TaskStatus."
+            )
+
+        # Runtime validation rejects malformed priority before persistence.
+        if (
+            priority is not None
+            and not isinstance(priority, TaskPriority)
+        ):
+            raise TypeError(
+                "Task priority filter must be a TaskPriority."
+            )
+
+        # Collection loading happens only after current validation succeeds.
         tasks = self.repository.list_all()
 
-        # Return the immutable snapshot without duplicating domain behavior.
-        return tasks
+        # Missing filters preserve the complete repository snapshot.
+        if status is None and priority is None:
+            return tasks
+
+        # Every supplied filter must match the resulting task.
+        return tuple(
+            task
+            for task in tasks
+            if (
+                status is None
+                or task.status is status
+            )
+            and (
+                priority is None
+                or task.priority is priority
+            )
+        )
