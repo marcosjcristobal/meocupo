@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 # UUID provides portable identifiers without requiring a database round trip.
 from uuid import UUID, uuid4
+# Self expresses that class factories return the concrete entity class.
+from typing import Self
 
 # Import the domain types that define valid task values.
 from personal_productivity.tasks.domain.task_priority import TaskPriority
@@ -241,6 +243,101 @@ class Task:
             raise TypeError(
                 "Task time block must be a CalendarTimeBlock."
             )
+
+
+    @classmethod
+    def rehydrate(
+        cls,
+        *,
+        id: UUID,
+        title: str,
+        status: TaskStatus,
+        completed_at: datetime | None,
+        postponement_count: int,
+        description: str | None = None,
+        estimated_minutes: int | None = None,
+        deadline: TaskDeadline | None = None,
+        time_block: CalendarTimeBlock | None = None,
+        priority: TaskPriority = TaskPriority.NORMAL,
+    ) -> Self:
+        """Reconstruct a task from trusted persistent state."""
+
+        # Persistent identity must preserve the domain identifier type.
+        if not isinstance(id, UUID):
+            raise TypeError(
+                "Rehydrated task identifier must be a UUID."
+            )
+
+        # Persisted lifecycle values must use the explicit domain enum.
+        if not isinstance(status, TaskStatus):
+            raise TypeError(
+                "Rehydrated status must be a TaskStatus."
+            )
+
+        # Normal construction reuses every public field invariant.
+        task = cls(
+            id=id,
+            title=title,
+            description=description,
+            estimated_minutes=estimated_minutes,
+            deadline=deadline,
+            time_block=time_block,
+            priority=priority,
+        )
+
+        # Restore historical state without replaying domain commands.
+        task._status = status
+
+        # Persisted postponement history must use a real integer.
+        # Booleans are excluded explicitly because bool subclasses int.
+        if (
+            isinstance(postponement_count, bool)
+            or not isinstance(postponement_count, int)
+        ):
+            raise TypeError(
+                "Postponement count must be an integer."
+            )
+
+        # Historical counters can only remain at zero or increase.
+        if postponement_count < 0:
+            raise ValueError(
+                "Postponement count cannot be negative."
+            )
+
+        task._completed_at = completed_at
+        task._postponement_count = postponement_count
+
+        # Completed tasks require one authoritative historical instant.
+        if status is TaskStatus.COMPLETED:
+            if completed_at is None:
+                raise ValueError(
+                    "Completed task must include completion time."
+                )
+
+            # Runtime validation protects timezone inspection.
+            if not isinstance(completed_at, datetime):
+                raise TypeError(
+                    "Completion time must be a datetime."
+                )
+
+            # Historical instants must identify an absolute moment.
+            if (
+                completed_at.tzinfo is None
+                or completed_at.utcoffset() is None
+            ):
+                raise ValueError(
+                    "Completion time must include a timezone."
+                )
+
+        # Completion metadata is invalid for every other lifecycle state.
+        elif completed_at is not None:
+            raise ValueError(
+                "Only completed tasks may include completion time."
+            )
+
+        # Return a regular entity ready for application use.
+        return task
+
 
     def start(self) -> None:
         """Move a pending task into active work."""
