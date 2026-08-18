@@ -28,6 +28,9 @@ from personal_productivity.tasks.domain.task_deadline import TaskDeadline
 # Priority converts its stable persisted string into the domain enum.
 from personal_productivity.tasks.domain.task_priority import TaskPriority
 
+# Status converts persisted lifecycle text into the domain enum.
+from personal_productivity.tasks.domain.task_status import TaskStatus
+
 
 # The initial schema preserves every field currently owned by Task.
 _CREATE_TASKS_TABLE_SQL = """
@@ -153,8 +156,15 @@ def _deserialize_task_record(
 ) -> Task:
     """Convert one SQLite row into a validated domain entity."""
 
-    # Column positions follow the shared SELECT order used by repositories.
-    return Task(
+    # Reconstruct the optional historical completion instant.
+    completed_at = (
+        datetime.fromisoformat(task_record[10])
+        if task_record[10] is not None
+        else None
+    )
+
+    # Rehydration restores lifecycle without replaying domain commands.
+    return Task.rehydrate(
         id=UUID(task_record[0]),
         title=task_record[1],
         description=task_record[2],
@@ -168,6 +178,9 @@ def _deserialize_task_record(
             task_record[7],
         ),
         priority=TaskPriority(task_record[8]),
+        status=TaskStatus(task_record[9]),
+        completed_at=completed_at,
+        postponement_count=task_record[11],
     )
 
 
@@ -216,9 +229,10 @@ class SqliteTaskRepository:
                     time_block_ends_at,
                     priority,
                     status,
+                    completed_at,
                     postponement_count
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     str(task.id),
@@ -231,6 +245,11 @@ class SqliteTaskRepository:
                     time_block_ends_at,
                     task.priority.value,
                     task.status.value,
+                    (
+                        task.completed_at.isoformat()
+                        if task.completed_at is not None
+                        else None
+                    ),
                     task.postponement_count,
                 ),
             )
@@ -265,7 +284,10 @@ class SqliteTaskRepository:
                 deadline_due_at,
                 time_block_starts_at,
                 time_block_ends_at,
-                priority
+                priority,
+                status,
+                completed_at,
+                postponement_count
             FROM tasks
             WHERE id = ?
             """,
@@ -294,7 +316,10 @@ class SqliteTaskRepository:
                 deadline_due_at,
                 time_block_starts_at,
                 time_block_ends_at,
-                priority
+                priority,
+                status,
+                completed_at,
+                postponement_count
             FROM tasks
             """
         ).fetchall()

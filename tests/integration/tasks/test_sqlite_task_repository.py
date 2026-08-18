@@ -480,3 +480,131 @@ def test_sqlite_file_preserves_task_across_connections(
     assert retrieved_task.id == original_task.id
     assert retrieved_task.title == original_task.title
     assert retrieved_task.description == original_task.description
+
+
+def test_sqlite_preserves_completed_task_lifecycle() -> None:
+    """Verify that completion state and history survive persistence."""
+
+    # Arrange: complete one task at an authoritative fixed instant.
+    connection = sqlite3.connect(":memory:")
+    completed_at = datetime(
+        2026,
+        8,
+        14,
+        18,
+        30,
+        tzinfo=UTC,
+    )
+    original_task = Task(
+        title="Prepare the investor presentation.",
+    )
+    original_task.complete(completed_at=completed_at)
+
+    try:
+        initialize_task_schema(connection)
+        repository = SqliteTaskRepository(connection=connection)
+
+        # Act: persist and reconstruct the completed entity.
+        repository.add(original_task)
+        retrieved_task = repository.get_by_id(original_task.id)
+    finally:
+        # Always release the native database connection.
+        connection.close()
+
+    # Assert: the stored task was reconstructed successfully.
+    assert retrieved_task is not None
+
+    # Assert: lifecycle state and its historical instant remain coupled.
+    assert retrieved_task.status is TaskStatus.COMPLETED
+    assert retrieved_task.completed_at == completed_at
+
+
+def test_sqlite_preserves_task_postponement_history() -> None:
+    """Verify that deadline postponement history survives persistence."""
+
+    # Arrange: postpone one calendar deadline twice.
+    connection = sqlite3.connect(":memory:")
+    original_task = Task(
+        title="Renew the insurance.",
+        deadline=TaskDeadline(
+            due_on=date(2026, 8, 15),
+        ),
+    )
+    original_task.postpone(
+        deadline=TaskDeadline(
+            due_on=date(2026, 8, 20),
+        ),
+    )
+    original_task.postpone(
+        deadline=TaskDeadline(
+            due_on=date(2026, 8, 25),
+        ),
+    )
+
+    try:
+        initialize_task_schema(connection)
+        repository = SqliteTaskRepository(connection=connection)
+
+        # Act: persist and reconstruct the task history.
+        repository.add(original_task)
+        retrieved_task = repository.get_by_id(original_task.id)
+    finally:
+        # Always release the native database connection.
+        connection.close()
+
+    # Assert: the stored task was reconstructed successfully.
+    assert retrieved_task is not None
+
+    # Assert: both current planning and its history remain unchanged.
+    assert retrieved_task.deadline == original_task.deadline
+    assert retrieved_task.postponement_count == 2
+    assert retrieved_task.status is TaskStatus.PENDING
+
+
+def test_sqlite_preserves_non_completed_lifecycle_states() -> None:
+    """Verify that active and terminal states survive reconstruction."""
+
+    # Arrange: create tasks in three distinct non-completed states.
+    in_progress_task = Task(title="Study Docker.")
+    in_progress_task.start()
+
+    paused_task = Task(title="Prepare the investor presentation.")
+    paused_task.start()
+    paused_task.pause()
+
+    cancelled_task = Task(title="Buy soil for the pitaya.")
+    cancelled_task.cancel()
+
+    connection = sqlite3.connect(":memory:")
+
+    try:
+        initialize_task_schema(connection)
+        repository = SqliteTaskRepository(connection=connection)
+
+        # Persist every lifecycle variant through the same adapter.
+        repository.add(in_progress_task)
+        repository.add(paused_task)
+        repository.add(cancelled_task)
+
+        # Act: reconstruct the complete immutable snapshot.
+        retrieved_tasks = repository.list_all()
+    finally:
+        # Always release the native database connection.
+        connection.close()
+
+    # Assert: each identity retains its exact persisted lifecycle state.
+    retrieved_statuses = {
+        task.id: task.status
+        for task in retrieved_tasks
+    }
+    assert retrieved_statuses == {
+        in_progress_task.id: TaskStatus.IN_PROGRESS,
+        paused_task.id: TaskStatus.PAUSED,
+        cancelled_task.id: TaskStatus.CANCELLED,
+    }
+
+    # Assert: non-completed tasks never invent completion history.
+    assert all(
+        task.completed_at is None
+        for task in retrieved_tasks
+    )
