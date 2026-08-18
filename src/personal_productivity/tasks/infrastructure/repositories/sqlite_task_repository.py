@@ -14,9 +14,10 @@ from personal_productivity.calendar.domain.calendar_time_block import (
     CalendarTimeBlock,
 )
 
-# Repository conflicts use one storage-independent application exception.
+# Repository outcomes remain independent from concrete storage.
 from personal_productivity.tasks.application.ports.task_repository import (
     TaskAlreadyExistsError,
+    TaskNotFoundError,
 )
 
 # SQLite rows are reconstructed as complete domain entities.
@@ -263,6 +264,69 @@ class SqliteTaskRepository:
             ) from error
 
         # Make the inserted entity visible to later repository operations.
+        self._connection.commit()
+
+    def save(self, task: Task) -> None:
+        """Replace the persisted state of an existing task."""
+
+        # Runtime validation protects SQL mapping from arbitrary values.
+        if not isinstance(task, Task):
+            raise TypeError("Stored value must be a Task.")
+
+        # Convert optional temporal values into their database columns.
+        deadline_due_on, deadline_due_at = _serialize_deadline(
+            task.deadline,
+        )
+        time_block_starts_at, time_block_ends_at = (
+            _serialize_time_block(task.time_block)
+        )
+
+        # Update every mutable field owned by the complete entity.
+        update_cursor = self._connection.execute(
+            """
+            UPDATE tasks
+            SET
+                title = ?,
+                description = ?,
+                estimated_minutes = ?,
+                deadline_due_on = ?,
+                deadline_due_at = ?,
+                time_block_starts_at = ?,
+                time_block_ends_at = ?,
+                priority = ?,
+                status = ?,
+                completed_at = ?,
+                postponement_count = ?
+            WHERE id = ?
+            """,
+            (
+                task.title,
+                task.description,
+                task.estimated_minutes,
+                deadline_due_on,
+                deadline_due_at,
+                time_block_starts_at,
+                time_block_ends_at,
+                task.priority.value,
+                task.status.value,
+                (
+                    task.completed_at.isoformat()
+                    if task.completed_at is not None
+                    else None
+                ),
+                task.postponement_count,
+                str(task.id),
+            ),
+        )
+
+        # Save semantics may update but never create an identity.
+        if update_cursor.rowcount == 0:
+            self._connection.rollback()
+            raise TaskNotFoundError(
+                f"Task '{task.id}' was not found."
+            )
+
+        # Commit the complete replacement as one persistence operation.
         self._connection.commit()
 
     def get_by_id(self, task_id: UUID) -> Task | None:

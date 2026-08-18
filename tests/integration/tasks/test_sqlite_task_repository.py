@@ -25,9 +25,10 @@ from personal_productivity.tasks.application.create_task import CreateTask
 from personal_productivity.tasks.application.get_task import GetTask
 from personal_productivity.tasks.application.list_tasks import ListTasks
 
-# Duplicate identities use one storage-independent port exception.
+# Repository outcomes remain independent from concrete storage.
 from personal_productivity.tasks.application.ports.task_repository import (
     TaskAlreadyExistsError,
+    TaskNotFoundError,
 )
 
 # Persistence tests cross the boundary using real domain entities.
@@ -608,3 +609,93 @@ def test_sqlite_preserves_non_completed_lifecycle_states() -> None:
         task.completed_at is None
         for task in retrieved_tasks
     )
+
+
+def test_sqlite_save_persists_existing_task_state() -> None:
+    """Verify that saving updates an existing SQLite task row."""
+
+    # Arrange: persist a task in its initial pending state.
+    connection = sqlite3.connect(":memory:")
+    task = Task(title="Study Docker.")
+
+    try:
+        initialize_task_schema(connection)
+        repository = SqliteTaskRepository(connection=connection)
+        repository.add(task)
+
+        # Change the authoritative entity after its initial insertion.
+        task.start()
+
+        # Act: persist the newer lifecycle state.
+        repository.save(task)
+        retrieved_task = repository.get_by_id(task.id)
+    finally:
+        # Always release the native database connection.
+        connection.close()
+
+    # Assert: the existing row was reconstructed with its newer state.
+    assert retrieved_task is not None
+    assert retrieved_task.id == task.id
+    assert retrieved_task.status is TaskStatus.IN_PROGRESS
+    assert retrieved_task.completed_at is None
+
+
+@pytest.mark.parametrize(
+    "invalid_task",
+    [
+        None,
+        42,
+        "not-a-task",
+    ],
+    ids=[
+        "none",
+        "integer",
+        "text",
+    ],
+)
+def test_sqlite_save_rejects_non_task_values(
+    invalid_task: object,
+) -> None:
+    """Ensure that arbitrary values cannot enter SQLite updates."""
+
+    # Arrange: initialize isolated SQLite storage.
+    connection = sqlite3.connect(":memory:")
+
+    try:
+        initialize_task_schema(connection)
+        repository = SqliteTaskRepository(connection=connection)
+
+        # Act and Assert: save accepts complete Task entities only.
+        with pytest.raises(
+            TypeError,
+            match="Stored value must be a Task",
+        ):
+            repository.save(invalid_task)
+    finally:
+        # Always release the native database connection.
+        connection.close()
+
+
+def test_sqlite_save_rejects_unknown_task_identity() -> None:
+    """Ensure that saving cannot create a missing SQLite task."""
+
+    # Arrange: create an entity whose identity is absent from storage.
+    connection = sqlite3.connect(":memory:")
+    missing_task = Task(title="Study Docker.")
+
+    try:
+        initialize_task_schema(connection)
+        repository = SqliteTaskRepository(connection=connection)
+
+        # Act and Assert: creation must use add instead of save.
+        with pytest.raises(
+            TaskNotFoundError,
+            match=f"Task '{missing_task.id}' was not found",
+        ):
+            repository.save(missing_task)
+
+        # Assert: the rejected update did not create a database row.
+        assert repository.get_by_id(missing_task.id) is None
+    finally:
+        # Always release the native database connection.
+        connection.close()

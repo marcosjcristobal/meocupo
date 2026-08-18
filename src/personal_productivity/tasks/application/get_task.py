@@ -6,17 +6,14 @@ from dataclasses import dataclass
 # UUID represents the portable identity supplied by an external channel.
 from uuid import UUID
 
-# The use case depends on the repository contract, not on a database.
+# The use case depends on repository contracts and shared outcomes.
 from personal_productivity.tasks.application.ports.task_repository import (
+    TaskNotFoundError,
     TaskRepository,
 )
 
 # Successful retrieval returns a complete domain entity.
 from personal_productivity.tasks.domain.task import Task
-
-
-class TaskNotFoundError(LookupError):
-    """Raised when a requested task does not exist."""
 
 
 @dataclass(slots=True, kw_only=True)

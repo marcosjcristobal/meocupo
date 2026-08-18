@@ -14,9 +14,10 @@ from personal_productivity.tasks.infrastructure.repositories.in_memory_task_repo
 # Repository tests store and retrieve real domain entities.
 from personal_productivity.tasks.domain.task import Task
 
-# Duplicate identities use one storage-independent application error.
+# Repository outcomes remain independent from concrete storage.
 from personal_productivity.tasks.application.ports.task_repository import (
     TaskAlreadyExistsError,
+    TaskNotFoundError,
 )
 
 
@@ -150,3 +151,75 @@ def test_list_all_returns_immutable_task_snapshot() -> None:
     assert len(task_snapshot) == 2
     assert first_task in task_snapshot
     assert second_task in task_snapshot
+
+
+def test_save_replaces_existing_task_entity() -> None:
+    """Verify that saving replaces the entity stored under one identity."""
+
+    # Arrange: persist an initial entity under its generated identity.
+    repository = InMemoryTaskRepository()
+    existing_task = Task(title="Study Docker.")
+    repository.add(existing_task)
+
+    # Create a different entity representing newer state for that identity.
+    replacement_task = Task(
+        title="Study advanced Docker networking.",
+        id=existing_task.id,
+    )
+    replacement_task.start()
+
+    # Act: persist the newer authoritative state.
+    repository.save(replacement_task)
+
+    # Assert: retrieval exposes the replacement entity and its lifecycle.
+    retrieved_task = repository.get_by_id(existing_task.id)
+    assert retrieved_task is replacement_task
+    assert retrieved_task.title == "Study advanced Docker networking."
+    assert retrieved_task.status is replacement_task.status
+
+
+def test_save_rejects_unknown_task_identity() -> None:
+    """Ensure that save semantics cannot create a missing task."""
+
+    # Arrange: create an entity whose identity is absent from storage.
+    repository = InMemoryTaskRepository()
+    missing_task = Task(title="Study Docker.")
+
+    # Act and Assert: creation must use add instead of save.
+    with pytest.raises(
+        TaskNotFoundError,
+        match=f"Task '{missing_task.id}' was not found",
+    ):
+        repository.save(missing_task)
+
+    # Assert: rejection leaves storage unchanged.
+    assert repository.get_by_id(missing_task.id) is None
+
+
+@pytest.mark.parametrize(
+    "invalid_task",
+    [
+        None,
+        42,
+        "not-a-task",
+    ],
+    ids=[
+        "none",
+        "integer",
+        "text",
+    ],
+)
+def test_save_rejects_non_task_values(
+    invalid_task: object,
+) -> None:
+    """Ensure that arbitrary values cannot enter task updates."""
+
+    # Arrange: create empty in-memory storage.
+    repository = InMemoryTaskRepository()
+
+    # Act and Assert: save accepts complete Task entities only.
+    with pytest.raises(
+        TypeError,
+        match="Stored value must be a Task",
+    ):
+        repository.save(invalid_task)

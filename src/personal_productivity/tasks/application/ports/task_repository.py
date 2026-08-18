@@ -13,6 +13,8 @@ from personal_productivity.tasks.domain.task import Task
 class TaskAlreadyExistsError(RuntimeError):
     """Raised when storage already contains the task identity."""
 
+class TaskNotFoundError(LookupError):
+    """Raised when storage does not contain the requested task identity."""
 
 class TaskRepository(Protocol):
     """Define how task use cases communicate with persistent storage."""
@@ -21,6 +23,12 @@ class TaskRepository(Protocol):
         """Persist a newly created task."""
 
         # Concrete adapters will implement this operation.
+        ...
+
+    def save(self, task: Task) -> None:
+        """Persist newer state for an existing task."""
+
+        # Concrete adapters decide how stored state is replaced.
         ...
 
     def get_by_id(self, task_id: UUID) -> Task | None:

@@ -6,9 +6,10 @@ from uuid import UUID
 # The adapter stores complete domain entities without modifying them.
 from personal_productivity.tasks.domain.task import Task
 
-# Repository conflicts use the storage-independent port exception.
+# Repository outcomes remain independent from concrete storage.
 from personal_productivity.tasks.application.ports.task_repository import (
     TaskAlreadyExistsError,
+    TaskNotFoundError,
 )
 
 
@@ -35,6 +36,22 @@ class InMemoryTaskRepository:
             )
 
         # Keep the authoritative domain entity available for later use cases.
+        self._tasks_by_id[task.id] = task
+
+    def save(self, task: Task) -> None:
+        """Replace the state stored under an existing task identity."""
+
+        # Runtime validation protects storage from arbitrary external values.
+        if not isinstance(task, Task):
+            raise TypeError("Stored value must be a Task.")
+
+        # Save semantics may update but never create an identity.
+        if task.id not in self._tasks_by_id:
+            raise TaskNotFoundError(
+                f"Task '{task.id}' was not found."
+            )
+
+        # The newest complete entity becomes authoritative for its identity.
         self._tasks_by_id[task.id] = task
 
     def get_by_id(self, task_id: UUID) -> Task | None:
