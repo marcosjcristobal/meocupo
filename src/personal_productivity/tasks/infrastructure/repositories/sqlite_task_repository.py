@@ -152,6 +152,44 @@ def _deserialize_time_block(
     )
 
 
+def _serialize_task_state(
+    task: Task,
+) -> tuple[object, ...]:
+    """Convert complete mutable task state into SQLite values."""
+
+    # Preserve both possible deadline precisions independently.
+    deadline_due_on, deadline_due_at = _serialize_deadline(
+        task.deadline,
+    )
+
+    # Preserve the optional calendar allocation as two boundaries.
+    time_block_starts_at, time_block_ends_at = (
+        _serialize_time_block(task.time_block)
+    )
+
+    # Completion history remains absent for every non-completed task.
+    completed_at = (
+        task.completed_at.isoformat()
+        if task.completed_at is not None
+        else None
+    )
+
+    # This order matches both INSERT columns and UPDATE assignments.
+    return (
+        task.title,
+        task.description,
+        task.estimated_minutes,
+        deadline_due_on,
+        deadline_due_at,
+        time_block_starts_at,
+        time_block_ends_at,
+        task.priority.value,
+        task.status.value,
+        completed_at,
+        task.postponement_count,
+    )
+
+
 def _deserialize_task_record(
     task_record: tuple[object, ...],
 ) -> Task:
@@ -205,15 +243,8 @@ class SqliteTaskRepository:
         if not isinstance(task, Task):
             raise TypeError("Stored value must be a Task.")
 
-        # Convert the deadline without losing its original precision.
-        deadline_due_on, deadline_due_at = _serialize_deadline(
-            task.deadline,
-        )
-
-        # Convert optional planned work into two exact boundaries.
-        time_block_starts_at, time_block_ends_at = (
-            _serialize_time_block(task.time_block)
-        )
+        # Serialize state once using the shared persistence mapping.
+        task_state = _serialize_task_state(task)
 
         try:
             # Persist stable scalar values instead of Python-specific objects.
@@ -237,21 +268,7 @@ class SqliteTaskRepository:
                 """,
                 (
                     str(task.id),
-                    task.title,
-                    task.description,
-                    task.estimated_minutes,
-                    deadline_due_on,
-                    deadline_due_at,
-                    time_block_starts_at,
-                    time_block_ends_at,
-                    task.priority.value,
-                    task.status.value,
-                    (
-                        task.completed_at.isoformat()
-                        if task.completed_at is not None
-                        else None
-                    ),
-                    task.postponement_count,
+                    *task_state,
                 ),
             )
         except IntegrityError as error:
@@ -273,13 +290,8 @@ class SqliteTaskRepository:
         if not isinstance(task, Task):
             raise TypeError("Stored value must be a Task.")
 
-        # Convert optional temporal values into their database columns.
-        deadline_due_on, deadline_due_at = _serialize_deadline(
-            task.deadline,
-        )
-        time_block_starts_at, time_block_ends_at = (
-            _serialize_time_block(task.time_block)
-        )
+        # Serialize state once using the shared persistence mapping.
+        task_state = _serialize_task_state(task)
 
         # Update every mutable field owned by the complete entity.
         update_cursor = self._connection.execute(
@@ -300,21 +312,7 @@ class SqliteTaskRepository:
             WHERE id = ?
             """,
             (
-                task.title,
-                task.description,
-                task.estimated_minutes,
-                deadline_due_on,
-                deadline_due_at,
-                time_block_starts_at,
-                time_block_ends_at,
-                task.priority.value,
-                task.status.value,
-                (
-                    task.completed_at.isoformat()
-                    if task.completed_at is not None
-                    else None
-                ),
-                task.postponement_count,
+                *task_state,
                 str(task.id),
             ),
         )
