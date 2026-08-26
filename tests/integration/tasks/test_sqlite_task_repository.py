@@ -29,6 +29,7 @@ from personal_productivity.tasks.application.list_tasks import ListTasks
 from personal_productivity.tasks.application.pause_task import PauseTask
 from personal_productivity.tasks.application.postpone_task import PostponeTask
 from personal_productivity.tasks.application.resume_task import ResumeTask
+from personal_productivity.tasks.application.schedule_task import ScheduleTask
 from personal_productivity.tasks.application.start_task import StartTask
 
 # Repository outcomes remain independent from concrete storage.
@@ -983,4 +984,53 @@ def test_postpone_task_persists_planning_through_sqlite() -> None:
 
     # Assert: postponement does not alter lifecycle.
     assert postponed_task.status is TaskStatus.PENDING
+    assert retrieved_task.status is TaskStatus.PENDING
+
+
+def test_schedule_task_persists_allocation_through_sqlite() -> None:
+    """Verify that task calendar allocation survives a SQLite round trip."""
+
+    # Arrange: define one exact interval for planned work.
+    connection = sqlite3.connect(":memory:")
+    time_block = CalendarTimeBlock(
+        starts_at=datetime(2026, 8, 27, 18, 0, tzinfo=UTC),
+        ends_at=datetime(2026, 8, 27, 19, 30, tzinfo=UTC),
+    )
+
+    try:
+        initialize_task_schema(connection)
+        repository = SqliteTaskRepository(connection=connection)
+        create_task = CreateTask(repository=repository)
+        schedule_task = ScheduleTask(repository=repository)
+        get_task = GetTask(repository=repository)
+
+        # Create the task without an initial calendar allocation.
+        created_task = create_task.execute(
+            title="Study Docker.",
+        )
+
+        # Act: retrieve, schedule, and save through ScheduleTask.
+        scheduled_task = schedule_task.execute(
+            task_id=created_task.id,
+            time_block=time_block,
+        )
+
+        # Re-read the entity from SQLite after the planning change.
+        retrieved_task = get_task.execute(
+            task_id=created_task.id,
+        )
+    finally:
+        # Always release the native database connection.
+        connection.close()
+
+    # Assert: both application results retain the original identity.
+    assert scheduled_task.id == created_task.id
+    assert retrieved_task.id == created_task.id
+
+    # Assert: the exact allocation survived SQLite persistence.
+    assert scheduled_task.time_block == time_block
+    assert retrieved_task.time_block == time_block
+
+    # Assert: scheduling does not alter lifecycle.
+    assert scheduled_task.status is TaskStatus.PENDING
     assert retrieved_task.status is TaskStatus.PENDING
