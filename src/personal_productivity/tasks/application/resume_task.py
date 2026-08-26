@@ -6,10 +6,14 @@ from dataclasses import dataclass
 # UUID represents the portable identity supplied by an external channel.
 from uuid import UUID
 
-# The use case depends on repository contracts and shared outcomes.
+# The use case depends only on the repository contract.
 from personal_productivity.tasks.application.ports.task_repository import (
-    TaskNotFoundError,
     TaskRepository,
+)
+
+# Shared lookup centralizes identity validation and absence handling.
+from personal_productivity.tasks.application.task_lookup import (
+    get_existing_task,
 )
 
 # Task contains the authoritative lifecycle transition.
@@ -30,18 +34,11 @@ class ResumeTask:
     ) -> Task:
         """Move one paused task back into active work."""
 
-        # Runtime validation rejects malformed external identifiers early.
-        if not isinstance(task_id, UUID):
-            raise TypeError("Task identifier must be a UUID.")
-
-        # Retrieve the authoritative entity through the repository port.
-        task = self.repository.get_by_id(task_id)
-
-        # Absence becomes one explicit storage-independent outcome.
-        if task is None:
-            raise TaskNotFoundError(
-                f"Task '{task_id}' was not found."
-            )
+        # Delegate shared validation and required retrieval.
+        task = get_existing_task(
+            repository=self.repository,
+            task_id=task_id,
+        )
 
         # Delegate lifecycle rules to the domain entity itself.
         task.resume()

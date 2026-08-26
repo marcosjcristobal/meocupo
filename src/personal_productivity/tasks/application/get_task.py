@@ -6,10 +6,14 @@ from dataclasses import dataclass
 # UUID represents the portable identity supplied by an external channel.
 from uuid import UUID
 
-# The use case depends on repository contracts and shared outcomes.
+# The use case depends only on the repository contract.
 from personal_productivity.tasks.application.ports.task_repository import (
-    TaskNotFoundError,
     TaskRepository,
+)
+
+# Shared lookup centralizes identity validation and absence handling.
+from personal_productivity.tasks.application.task_lookup import (
+    get_existing_task,
 )
 
 # Successful retrieval returns a complete domain entity.
@@ -30,18 +34,8 @@ class GetTask:
     ) -> Task:
         """Return the requested task or report that it is absent."""
 
-        # Runtime validation rejects malformed external identifiers early.
-        if not isinstance(task_id, UUID):
-            raise TypeError("Task identifier must be a UUID.")
-
-        # Ask the repository port without knowing its storage technology.
-        task = self.repository.get_by_id(task_id)
-
-        # Convert storage absence into an explicit application-level outcome.
-        if task is None:
-            raise TaskNotFoundError(
-                f"Task '{task_id}' was not found."
-            )
-
-        # Return the authoritative entity obtained from persistence.
-        return task
+        # Delegate shared validation and required retrieval.
+        return get_existing_task(
+            repository=self.repository,
+            task_id=task_id,
+        )

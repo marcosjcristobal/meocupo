@@ -6,11 +6,13 @@ from uuid import UUID, uuid4
 # Pytest verifies explicit application errors and runtime validation.
 import pytest
 
-# Import the use case that coordinates task retrieval.
-from personal_productivity.tasks.application.get_task import (
-    GetTask,
+# Missing identities use one storage-independent application outcome.
+from personal_productivity.tasks.application.ports.task_repository import (
     TaskNotFoundError,
 )
+
+# Import the use case that coordinates task retrieval.
+from personal_productivity.tasks.application.get_task import GetTask
 
 # Tests use real domain entities as repository results.
 from personal_productivity.tasks.domain.task import Task
