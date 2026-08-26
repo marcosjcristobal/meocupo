@@ -31,6 +31,9 @@ from personal_productivity.tasks.application.postpone_task import PostponeTask
 from personal_productivity.tasks.application.resume_task import ResumeTask
 from personal_productivity.tasks.application.schedule_task import ScheduleTask
 from personal_productivity.tasks.application.start_task import StartTask
+from personal_productivity.tasks.application.unschedule_task import (
+    UnscheduleTask,
+)
 
 # Repository outcomes remain independent from concrete storage.
 from personal_productivity.tasks.application.ports.task_repository import (
@@ -1033,4 +1036,53 @@ def test_schedule_task_persists_allocation_through_sqlite() -> None:
 
     # Assert: scheduling does not alter lifecycle.
     assert scheduled_task.status is TaskStatus.PENDING
+    assert retrieved_task.status is TaskStatus.PENDING
+
+
+def test_unschedule_task_persists_allocation_removal_through_sqlite() -> None:
+    """Verify that released task allocation survives a SQLite round trip."""
+
+    # Arrange: define one exact interval initially assigned to the task.
+    connection = sqlite3.connect(":memory:")
+    time_block = CalendarTimeBlock(
+        starts_at=datetime(2026, 8, 27, 18, 0, tzinfo=UTC),
+        ends_at=datetime(2026, 8, 27, 19, 30, tzinfo=UTC),
+    )
+
+    try:
+        initialize_task_schema(connection)
+        repository = SqliteTaskRepository(connection=connection)
+        create_task = CreateTask(repository=repository)
+        unschedule_task = UnscheduleTask(repository=repository)
+        get_task = GetTask(repository=repository)
+
+        # Create the task with its initial calendar allocation.
+        created_task = create_task.execute(
+            title="Study Docker.",
+            time_block=time_block,
+        )
+
+        # Act: retrieve, unschedule, and save through UnscheduleTask.
+        unscheduled_task = unschedule_task.execute(
+            task_id=created_task.id,
+        )
+
+        # Re-read the entity from SQLite after releasing the allocation.
+        retrieved_task = get_task.execute(
+            task_id=created_task.id,
+        )
+    finally:
+        # Always release the native database connection.
+        connection.close()
+
+    # Assert: both application results retain the original identity.
+    assert unscheduled_task.id == created_task.id
+    assert retrieved_task.id == created_task.id
+
+    # Assert: removal of the allocation survived persistence.
+    assert unscheduled_task.time_block is None
+    assert retrieved_task.time_block is None
+
+    # Assert: unscheduling does not alter lifecycle.
+    assert unscheduled_task.status is TaskStatus.PENDING
     assert retrieved_task.status is TaskStatus.PENDING
