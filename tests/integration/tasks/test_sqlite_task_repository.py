@@ -21,6 +21,7 @@ from personal_productivity.calendar.domain.calendar_time_block import (
 )
 
 # Application use cases must work without knowing that SQLite is used.
+from personal_productivity.tasks.application.complete_task import CompleteTask
 from personal_productivity.tasks.application.create_task import CreateTask
 from personal_productivity.tasks.application.get_task import GetTask
 from personal_productivity.tasks.application.list_tasks import ListTasks
@@ -834,3 +835,54 @@ def test_resume_task_persists_transition_through_sqlite() -> None:
     # Assert: active work survived SQLite persistence.
     assert resumed_task.status is TaskStatus.IN_PROGRESS
     assert retrieved_task.status is TaskStatus.IN_PROGRESS
+
+
+def test_complete_task_persists_transition_through_sqlite() -> None:
+    """Verify that completion history survives a complete SQLite round trip."""
+
+    # Arrange: inject one SQLite repository into collaborating use cases.
+    connection = sqlite3.connect(":memory:")
+    completed_at = datetime(
+        2026,
+        8,
+        26,
+        18,
+        30,
+        tzinfo=UTC,
+    )
+
+    try:
+        initialize_task_schema(connection)
+        repository = SqliteTaskRepository(connection=connection)
+        create_task = CreateTask(repository=repository)
+        complete_task = CompleteTask(repository=repository)
+        get_task = GetTask(repository=repository)
+
+        # Create the task through the application boundary.
+        created_task = create_task.execute(
+            title="Prepare the investor presentation.",
+        )
+
+        # Act: retrieve, complete, and save through CompleteTask.
+        completed_task = complete_task.execute(
+            task_id=created_task.id,
+            completed_at=completed_at,
+        )
+
+        # Re-read the entity from SQLite after the transition.
+        retrieved_task = get_task.execute(
+            task_id=created_task.id,
+        )
+    finally:
+        # Always release the native database connection.
+        connection.close()
+
+    # Assert: both application results retain the original identity.
+    assert completed_task.id == created_task.id
+    assert retrieved_task.id == created_task.id
+
+    # Assert: lifecycle and completion history survived persistence.
+    assert completed_task.status is TaskStatus.COMPLETED
+    assert retrieved_task.status is TaskStatus.COMPLETED
+    assert completed_task.completed_at == completed_at
+    assert retrieved_task.completed_at == completed_at
