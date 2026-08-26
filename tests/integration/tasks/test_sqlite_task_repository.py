@@ -21,6 +21,7 @@ from personal_productivity.calendar.domain.calendar_time_block import (
 )
 
 # Application use cases must work without knowing that SQLite is used.
+from personal_productivity.tasks.application.cancel_task import CancelTask
 from personal_productivity.tasks.application.complete_task import CompleteTask
 from personal_productivity.tasks.application.create_task import CreateTask
 from personal_productivity.tasks.application.get_task import GetTask
@@ -886,3 +887,45 @@ def test_complete_task_persists_transition_through_sqlite() -> None:
     assert retrieved_task.status is TaskStatus.COMPLETED
     assert completed_task.completed_at == completed_at
     assert retrieved_task.completed_at == completed_at
+
+
+def test_cancel_task_persists_transition_through_sqlite() -> None:
+    """Verify that cancellation survives a complete SQLite round trip."""
+
+    # Arrange: inject one SQLite repository into collaborating use cases.
+    connection = sqlite3.connect(":memory:")
+
+    try:
+        initialize_task_schema(connection)
+        repository = SqliteTaskRepository(connection=connection)
+        create_task = CreateTask(repository=repository)
+        cancel_task = CancelTask(repository=repository)
+        get_task = GetTask(repository=repository)
+
+        # Create the task through the application boundary.
+        created_task = create_task.execute(
+            title="Buy soil for the pitaya.",
+        )
+
+        # Act: retrieve, cancel, and save through CancelTask.
+        cancelled_task = cancel_task.execute(
+            task_id=created_task.id,
+        )
+
+        # Re-read the entity from SQLite after the transition.
+        retrieved_task = get_task.execute(
+            task_id=created_task.id,
+        )
+    finally:
+        # Always release the native database connection.
+        connection.close()
+
+    # Assert: both application results retain the original identity.
+    assert cancelled_task.id == created_task.id
+    assert retrieved_task.id == created_task.id
+
+    # Assert: cancellation survived without inventing completion history.
+    assert cancelled_task.status is TaskStatus.CANCELLED
+    assert retrieved_task.status is TaskStatus.CANCELLED
+    assert cancelled_task.completed_at is None
+    assert retrieved_task.completed_at is None
