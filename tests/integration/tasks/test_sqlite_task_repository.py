@@ -25,6 +25,7 @@ from personal_productivity.tasks.application.create_task import CreateTask
 from personal_productivity.tasks.application.get_task import GetTask
 from personal_productivity.tasks.application.list_tasks import ListTasks
 from personal_productivity.tasks.application.pause_task import PauseTask
+from personal_productivity.tasks.application.resume_task import ResumeTask
 from personal_productivity.tasks.application.start_task import StartTask
 
 # Repository outcomes remain independent from concrete storage.
@@ -785,3 +786,51 @@ def test_pause_task_persists_transition_through_sqlite() -> None:
     # Assert: the paused state survived SQLite persistence.
     assert paused_task.status is TaskStatus.PAUSED
     assert retrieved_task.status is TaskStatus.PAUSED
+
+
+def test_resume_task_persists_transition_through_sqlite() -> None:
+    """Verify that resumed work survives a complete SQLite round trip."""
+
+    # Arrange: inject one SQLite repository into all collaborating use cases.
+    connection = sqlite3.connect(":memory:")
+
+    try:
+        initialize_task_schema(connection)
+        repository = SqliteTaskRepository(connection=connection)
+        create_task = CreateTask(repository=repository)
+        start_task = StartTask(repository=repository)
+        pause_task = PauseTask(repository=repository)
+        resume_task = ResumeTask(repository=repository)
+        get_task = GetTask(repository=repository)
+
+        # Create, start, and pause through application boundaries.
+        created_task = create_task.execute(
+            title="Study Docker.",
+        )
+        start_task.execute(
+            task_id=created_task.id,
+        )
+        pause_task.execute(
+            task_id=created_task.id,
+        )
+
+        # Act: retrieve, resume, and save through ResumeTask.
+        resumed_task = resume_task.execute(
+            task_id=created_task.id,
+        )
+
+        # Re-read the entity from SQLite after the transition.
+        retrieved_task = get_task.execute(
+            task_id=created_task.id,
+        )
+    finally:
+        # Always release the native database connection.
+        connection.close()
+
+    # Assert: both application results retain the original identity.
+    assert resumed_task.id == created_task.id
+    assert retrieved_task.id == created_task.id
+
+    # Assert: active work survived SQLite persistence.
+    assert resumed_task.status is TaskStatus.IN_PROGRESS
+    assert retrieved_task.status is TaskStatus.IN_PROGRESS
