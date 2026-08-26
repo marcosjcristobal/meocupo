@@ -30,6 +30,9 @@ from personal_productivity.tasks.application.pause_task import PauseTask
 from personal_productivity.tasks.application.postpone_task import PostponeTask
 from personal_productivity.tasks.application.resume_task import ResumeTask
 from personal_productivity.tasks.application.schedule_task import ScheduleTask
+from personal_productivity.tasks.application.set_task_deadline import (
+    SetTaskDeadline,
+)
 from personal_productivity.tasks.application.start_task import StartTask
 from personal_productivity.tasks.application.unschedule_task import (
     UnscheduleTask,
@@ -1085,4 +1088,56 @@ def test_unschedule_task_persists_allocation_removal_through_sqlite() -> None:
 
     # Assert: unscheduling does not alter lifecycle.
     assert unscheduled_task.status is TaskStatus.PENDING
+    assert retrieved_task.status is TaskStatus.PENDING
+
+
+def test_set_task_deadline_persists_planning_through_sqlite() -> None:
+    """Verify that deadline assignment survives a SQLite round trip."""
+
+    # Arrange: define one initial calendar commitment.
+    connection = sqlite3.connect(":memory:")
+    deadline = TaskDeadline(
+        due_on=date(2026, 8, 30),
+    )
+
+    try:
+        initialize_task_schema(connection)
+        repository = SqliteTaskRepository(connection=connection)
+        create_task = CreateTask(repository=repository)
+        set_task_deadline = SetTaskDeadline(repository=repository)
+        get_task = GetTask(repository=repository)
+
+        # Create the task without an initial deadline.
+        created_task = create_task.execute(
+            title="Renew the insurance.",
+        )
+
+        # Act: retrieve, assign, and save through SetTaskDeadline.
+        updated_task = set_task_deadline.execute(
+            task_id=created_task.id,
+            deadline=deadline,
+        )
+
+        # Re-read the entity from SQLite after the planning change.
+        retrieved_task = get_task.execute(
+            task_id=created_task.id,
+        )
+    finally:
+        # Always release the native database connection.
+        connection.close()
+
+    # Assert: both application results retain the original identity.
+    assert updated_task.id == created_task.id
+    assert retrieved_task.id == created_task.id
+
+    # Assert: the deadline survived SQLite persistence.
+    assert updated_task.deadline == deadline
+    assert retrieved_task.deadline == deadline
+
+    # Assert: initial assignment is not historical postponement.
+    assert updated_task.postponement_count == 0
+    assert retrieved_task.postponement_count == 0
+
+    # Assert: deadline assignment does not alter lifecycle.
+    assert updated_task.status is TaskStatus.PENDING
     assert retrieved_task.status is TaskStatus.PENDING
