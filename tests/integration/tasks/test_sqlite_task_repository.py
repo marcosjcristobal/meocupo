@@ -22,6 +22,9 @@ from personal_productivity.calendar.domain.calendar_time_block import (
 
 # Application use cases must work without knowing that SQLite is used.
 from personal_productivity.tasks.application.cancel_task import CancelTask
+from personal_productivity.tasks.application.clear_task_deadline import (
+    ClearTaskDeadline,
+)
 from personal_productivity.tasks.application.complete_task import CompleteTask
 from personal_productivity.tasks.application.create_task import CreateTask
 from personal_productivity.tasks.application.get_task import GetTask
@@ -1139,5 +1142,66 @@ def test_set_task_deadline_persists_planning_through_sqlite() -> None:
     assert retrieved_task.postponement_count == 0
 
     # Assert: deadline assignment does not alter lifecycle.
+    assert updated_task.status is TaskStatus.PENDING
+    assert retrieved_task.status is TaskStatus.PENDING
+
+
+def test_clear_task_deadline_persists_planning_removal_through_sqlite() -> None:
+    """Verify that deadline removal survives a SQLite round trip."""
+
+    # Arrange: define independent deadline and calendar planning values.
+    connection = sqlite3.connect(":memory:")
+    deadline = TaskDeadline(
+        due_on=date(2026, 9, 15),
+    )
+    time_block = CalendarTimeBlock(
+        starts_at=datetime(2026, 9, 12, 18, 0, tzinfo=UTC),
+        ends_at=datetime(2026, 9, 12, 19, 30, tzinfo=UTC),
+    )
+
+    try:
+        initialize_task_schema(connection)
+        repository = SqliteTaskRepository(connection=connection)
+        create_task = CreateTask(repository=repository)
+        clear_task_deadline = ClearTaskDeadline(repository=repository)
+        get_task = GetTask(repository=repository)
+
+        # Create the task with both forms of temporal planning.
+        created_task = create_task.execute(
+            title="Renew the insurance.",
+            deadline=deadline,
+            time_block=time_block,
+        )
+
+        # Act: retrieve, clear, and save through ClearTaskDeadline.
+        updated_task = clear_task_deadline.execute(
+            task_id=created_task.id,
+        )
+
+        # Re-read the entity from SQLite after removing the deadline.
+        retrieved_task = get_task.execute(
+            task_id=created_task.id,
+        )
+    finally:
+        # Always release the native database connection.
+        connection.close()
+
+    # Assert: both application results retain the original identity.
+    assert updated_task.id == created_task.id
+    assert retrieved_task.id == created_task.id
+
+    # Assert: deadline removal survived SQLite persistence.
+    assert updated_task.deadline is None
+    assert retrieved_task.deadline is None
+
+    # Assert: clearing a deadline does not count as postponement.
+    assert updated_task.postponement_count == 0
+    assert retrieved_task.postponement_count == 0
+
+    # Assert: the independent calendar allocation remains unchanged.
+    assert updated_task.time_block == time_block
+    assert retrieved_task.time_block == time_block
+
+    # Assert: removing planning does not alter lifecycle.
     assert updated_task.status is TaskStatus.PENDING
     assert retrieved_task.status is TaskStatus.PENDING
