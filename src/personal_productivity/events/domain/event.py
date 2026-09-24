@@ -6,6 +6,9 @@ from dataclasses import dataclass, field
 # Datetime identifies the exact instant used by temporal event queries.
 from datetime import datetime
 
+# Self preserves the concrete entity type returned by rehydration.
+from typing import Self
+
 # UUID provides portable identity without requiring a database round trip.
 from uuid import UUID, uuid4
 
@@ -79,6 +82,38 @@ class Event:
 
             # Blank descriptions share one canonical absence representation.
             self.description = normalized_description or None
+
+    @classmethod
+    def rehydrate(
+        cls,
+        *,
+        id: UUID,
+        title: str,
+        time_block: CalendarTimeBlock,
+        status: EventStatus,
+        description: str | None = None,
+    ) -> Self:
+        """Reconstruct an event from its persisted domain state."""
+
+        # Persistent identity must retain the portable domain type.
+        if not isinstance(id, UUID):
+            raise TypeError("Rehydrated event identifier must be a UUID.")
+
+        # Persisted lifecycle state must use the domain vocabulary.
+        if not isinstance(status, EventStatus):
+            raise TypeError("Rehydrated status must be an EventStatus.")
+
+        # Normal construction reuses title, description, and interval rules.
+        event = cls(
+            id=id,
+            title=title,
+            time_block=time_block,
+            description=description,
+        )
+
+        # Restore historical state without replaying a domain command.
+        event._status = status
+        return event
 
     def cancel(self) -> None:
         """Cancel an event that is still expected to take place."""
