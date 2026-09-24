@@ -38,3 +38,9 @@ class EventRepository(Protocol):
 
         # Concrete adapters decide how stored events are located.
         ...
+
+    def list_all(self) -> tuple[Event, ...]:
+        """Return an immutable snapshot of every stored event."""
+
+        # Concrete adapters decide how event collections are loaded.
+        ...

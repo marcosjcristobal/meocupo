@@ -151,3 +151,33 @@ def test_add_rejects_duplicate_event_identity() -> None:
 
     # Assert: the original authoritative entity remains stored.
     assert repository.get_by_id(existing_event.id) is existing_event
+
+
+def test_list_all_returns_immutable_event_snapshot() -> None:
+    """Verify that collection retrieval does not expose mutable storage."""
+
+    # Arrange: store two independent events in a known order.
+    repository = InMemoryEventRepository()
+    first_event = Event(
+        title="Boxing training.",
+        time_block=CalendarTimeBlock(
+            starts_at=datetime(2026, 9, 25, 18, 0, tzinfo=UTC),
+            ends_at=datetime(2026, 9, 25, 19, 30, tzinfo=UTC),
+        ),
+    )
+    second_event = Event(
+        title="Dentist appointment.",
+        time_block=CalendarTimeBlock(
+            starts_at=datetime(2026, 9, 26, 9, 0, tzinfo=UTC),
+            ends_at=datetime(2026, 9, 26, 9, 30, tzinfo=UTC),
+        ),
+    )
+    repository.add(first_event)
+    repository.add(second_event)
+
+    # Act: request a snapshot of every stored event.
+    event_snapshot = repository.list_all()
+
+    # Assert: callers receive an immutable collection in insertion order.
+    assert isinstance(event_snapshot, tuple)
+    assert event_snapshot == (first_event, second_event)

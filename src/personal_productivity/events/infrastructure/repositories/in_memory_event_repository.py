@@ -52,3 +52,9 @@ class InMemoryEventRepository:
 
         # Dictionary lookup preserves the repository's optional result.
         return self._events_by_id.get(event_id)
+
+    def list_all(self) -> tuple[Event, ...]:
+        """Return an immutable snapshot of all stored events."""
+
+        # Copy dictionary values into a tuple without exposing storage itself.
+        return tuple(self._events_by_id.values())
