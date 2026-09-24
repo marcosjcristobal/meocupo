@@ -10,6 +10,10 @@ from uuid import UUID
 from personal_productivity.events.domain.event import Event
 
 
+class EventAlreadyExistsError(RuntimeError):
+    """Raised when storage already contains the event identity."""
+
+
 class EventNotFoundError(LookupError):
     """Raised when storage does not contain the requested event identity."""
 
