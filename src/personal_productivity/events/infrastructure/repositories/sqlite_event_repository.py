@@ -17,6 +17,7 @@ from personal_productivity.calendar.domain.calendar_time_block import (
 # Duplicate identities use the same error as other repository adapters.
 from personal_productivity.events.application.ports.event_repository import (
     EventAlreadyExistsError,
+    EventNotFoundError,
 )
 
 # Event is the domain entity stored by the adapter.
@@ -65,6 +66,19 @@ def _deserialize_event_record(record: tuple[object, ...]) -> Event:
     )
 
 
+def _serialize_event_state(event: Event) -> tuple[str, str | None, str, str, str]:
+    """Convert mutable event fields into SQLite-compatible values."""
+
+    # The order matches INSERT columns and UPDATE assignments.
+    return (
+        event.title,
+        event.description,
+        event.time_block.starts_at.isoformat(),
+        event.time_block.ends_at.isoformat(),
+        event.status.value,
+    )
+
+
 class SqliteEventRepository:
     """Persist events using an injected SQLite connection."""
 
@@ -100,11 +114,7 @@ class SqliteEventRepository:
                 """,
                 (
                     str(event.id),
-                    event.title,
-                    event.description,
-                    event.time_block.starts_at.isoformat(),
-                    event.time_block.ends_at.isoformat(),
-                    event.status.value,
+                    *_serialize_event_state(event),
                 ),
             )
         except IntegrityError as error:
@@ -120,6 +130,39 @@ class SqliteEventRepository:
             raise
 
         # Commit the insertion so later connections can read it.
+        self._connection.commit()
+
+    def save(self, event: Event) -> None:
+        """Persist newer state for an existing SQLite event."""
+
+        # Validate before accessing attributes or issuing an update.
+        if not isinstance(event, Event):
+            raise TypeError("Event must be an Event.")
+
+        # Replace every mutable field under the event's existing identity.
+        cursor = self._connection.execute(
+            """
+            UPDATE events
+            SET title = ?,
+                description = ?,
+                time_block_starts_at = ?,
+                time_block_ends_at = ?,
+                status = ?
+            WHERE id = ?
+            """,
+            (
+                *_serialize_event_state(event),
+                str(event.id),
+            ),
+        )
+
+        # Updates cannot silently create a previously absent event.
+        if cursor.rowcount == 0:
+            raise EventNotFoundError(
+                f"Event '{event.id}' was not found."
+            )
+
+        # Commit successful changes so later connections can read them.
         self._connection.commit()
 
     def get_by_id(self, event_id: UUID) -> Event | None:

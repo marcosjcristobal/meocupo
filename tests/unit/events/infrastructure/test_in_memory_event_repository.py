@@ -20,6 +20,7 @@ from personal_productivity.events.domain.event import Event
 # Duplicate creation uses one storage-independent repository outcome.
 from personal_productivity.events.application.ports.event_repository import (
     EventAlreadyExistsError,
+    EventNotFoundError,
 )
 
 # Import the local adapter exercised by these tests.
@@ -181,3 +182,78 @@ def test_list_all_returns_immutable_event_snapshot() -> None:
     # Assert: callers receive an immutable collection in insertion order.
     assert isinstance(event_snapshot, tuple)
     assert event_snapshot == (first_event, second_event)
+
+
+def test_save_replaces_existing_event_entity() -> None:
+    """Verify that saving replaces the event stored under one identity."""
+
+    # Arrange: persist the original scheduled entity.
+    repository = InMemoryEventRepository()
+    existing_event = Event(
+        title="Boxing training.",
+        time_block=CalendarTimeBlock(
+            starts_at=datetime(2026, 9, 25, 18, 0, tzinfo=UTC),
+            ends_at=datetime(2026, 9, 25, 19, 30, tzinfo=UTC),
+        ),
+    )
+    repository.add(existing_event)
+
+    # Represent a newer state using another entity with the same UUID.
+    replacement_event = Event(
+        id=existing_event.id,
+        title="Evening boxing training.",
+        time_block=CalendarTimeBlock(
+            starts_at=datetime(2026, 9, 26, 18, 0, tzinfo=UTC),
+            ends_at=datetime(2026, 9, 26, 19, 30, tzinfo=UTC),
+        ),
+    )
+    replacement_event.cancel()
+
+    # Act: persist the newer authoritative entity.
+    repository.save(replacement_event)
+
+    # Assert: retrieval returns the replacement and its current state.
+    assert repository.get_by_id(existing_event.id) is replacement_event
+
+
+def test_save_rejects_unknown_event_identity() -> None:
+    """Ensure that save semantics cannot create a missing event."""
+
+    # Arrange: create an event absent from isolated storage.
+    repository = InMemoryEventRepository()
+    missing_event = Event(
+        title="Boxing training.",
+        time_block=CalendarTimeBlock(
+            starts_at=datetime(2026, 9, 25, 18, 0, tzinfo=UTC),
+            ends_at=datetime(2026, 9, 25, 19, 30, tzinfo=UTC),
+        ),
+    )
+
+    # Act and Assert: new events must be persisted with add().
+    with pytest.raises(
+        EventNotFoundError,
+        match=f"Event '{missing_event.id}' was not found",
+    ):
+        repository.save(missing_event)
+
+    # Assert: rejection did not insert the unknown event.
+    assert repository.get_by_id(missing_event.id) is None
+
+
+@pytest.mark.parametrize(
+    "invalid_event",
+    [None, 42, "not-an-event"],
+    ids=["none", "integer", "text"],
+)
+def test_save_rejects_non_event_values(invalid_event: object) -> None:
+    """Ensure that save accepts only event domain entities."""
+
+    # Arrange: create isolated storage for the invalid update.
+    repository = InMemoryEventRepository()
+
+    # Act and Assert: arbitrary values fail before identity lookup.
+    with pytest.raises(
+        TypeError,
+        match="Event must be an Event",
+    ):
+        repository.save(invalid_event)

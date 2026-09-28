@@ -25,6 +25,7 @@ from personal_productivity.events.application.list_events import ListEvents
 # Duplicate creation uses one storage-independent repository outcome.
 from personal_productivity.events.application.ports.event_repository import (
     EventAlreadyExistsError,
+    EventNotFoundError,
 )
 
 # Persistence tests cross the boundary with complete domain entities.
@@ -378,3 +379,101 @@ def test_sqlite_add_rejects_duplicate_event_identity() -> None:
 
     assert retrieved_event is not None
     assert retrieved_event.title == existing_event.title
+
+
+def test_sqlite_save_persists_existing_event_state() -> None:
+    """Verify that saving updates an existing SQLite event row."""
+
+    # Arrange: persist an event in its original scheduled state.
+    connection = sqlite3.connect(":memory:")
+    event = Event(
+        title="Boxing training.",
+        time_block=CalendarTimeBlock(
+            starts_at=datetime(2026, 9, 25, 18, 0, tzinfo=UTC),
+            ends_at=datetime(2026, 9, 25, 19, 30, tzinfo=UTC),
+        ),
+    )
+    replacement_time_block = CalendarTimeBlock(
+        starts_at=datetime(2026, 9, 26, 18, 0, tzinfo=UTC),
+        ends_at=datetime(2026, 9, 26, 19, 30, tzinfo=UTC),
+    )
+
+    try:
+        initialize_event_schema(connection)
+        repository = SqliteEventRepository(connection=connection)
+        repository.add(event)
+
+        # Change the authoritative entity after its initial insertion.
+        event.reschedule(time_block=replacement_time_block)
+        event.cancel()
+
+        # Act: persist and reconstruct the newer event state.
+        repository.save(event)
+        retrieved_event = repository.get_by_id(event.id)
+    finally:
+        # Always release the native database connection.
+        connection.close()
+
+    # Assert: the same event now carries both persisted changes.
+    assert retrieved_event is not None
+    assert retrieved_event.id == event.id
+    assert retrieved_event.time_block == replacement_time_block
+    assert retrieved_event.status is EventStatus.CANCELLED
+
+
+def test_sqlite_save_rejects_unknown_event_identity() -> None:
+    """Ensure that save cannot create an event absent from SQLite."""
+
+    # Arrange: create a valid event without adding it to storage.
+    connection = sqlite3.connect(":memory:")
+    missing_event = Event(
+        title="Boxing training.",
+        time_block=CalendarTimeBlock(
+            starts_at=datetime(2026, 9, 25, 18, 0, tzinfo=UTC),
+            ends_at=datetime(2026, 9, 25, 19, 30, tzinfo=UTC),
+        ),
+    )
+
+    try:
+        initialize_event_schema(connection)
+        repository = SqliteEventRepository(connection=connection)
+
+        # Act and Assert: updates require an existing UUID.
+        with pytest.raises(
+            EventNotFoundError,
+            match=f"Event '{missing_event.id}' was not found",
+        ):
+            repository.save(missing_event)
+
+        # Assert: a failed update did not insert the event.
+        assert repository.get_by_id(missing_event.id) is None
+    finally:
+        # Always release the native database connection.
+        connection.close()
+
+
+@pytest.mark.parametrize(
+    "invalid_event",
+    [None, 42, "not-an-event"],
+    ids=["none", "integer", "text"],
+)
+def test_sqlite_save_rejects_non_event_values(
+    invalid_event: object,
+) -> None:
+    """Ensure that SQLite updates accept only domain events."""
+
+    # Arrange: initialize isolated storage for the invalid update.
+    connection = sqlite3.connect(":memory:")
+    try:
+        initialize_event_schema(connection)
+        repository = SqliteEventRepository(connection=connection)
+
+        # Act and Assert: reject arbitrary values before issuing SQL.
+        with pytest.raises(
+            TypeError,
+            match="Event must be an Event",
+        ):
+            repository.save(invalid_event)
+    finally:
+        # Always release the native database connection.
+        connection.close()

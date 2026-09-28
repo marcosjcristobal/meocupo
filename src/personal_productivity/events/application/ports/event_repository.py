@@ -30,6 +30,15 @@ class EventRepository(Protocol):
         # Concrete adapters will implement this operation.
         ...
 
+    def save(
+        self,
+        event: Event,
+    ) -> None:
+        """Persist newer state for an existing event."""
+
+        # Concrete adapters decide how stored state is replaced.
+        ...
+
     def get_by_id(
         self,
         event_id: UUID,

@@ -6,6 +6,7 @@ from uuid import UUID
 # Duplicate identities use one adapter-independent repository outcome.
 from personal_productivity.events.application.ports.event_repository import (
     EventAlreadyExistsError,
+    EventNotFoundError,
 )
 
 # Event is the complete domain entity stored by this adapter.
@@ -38,6 +39,25 @@ class InMemoryEventRepository:
             )
 
         # Keep the authoritative domain entity available to later use cases.
+        self._events_by_id[event.id] = event
+
+    def save(
+        self,
+        event: Event,
+    ) -> None:
+        """Replace the event stored under an existing identity."""
+
+        # Reject arbitrary values before reading domain attributes.
+        if not isinstance(event, Event):
+            raise TypeError("Event must be an Event.")
+
+        # Updates cannot silently create a previously absent event.
+        if event.id not in self._events_by_id:
+            raise EventNotFoundError(
+                f"Event '{event.id}' was not found."
+            )
+
+        # The same identity now points to the newer authoritative entity.
         self._events_by_id[event.id] = event
 
     def get_by_id(
