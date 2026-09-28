@@ -18,6 +18,7 @@ from personal_productivity.calendar.domain.calendar_time_block import (
 )
 
 # Application use cases collaborate without knowing the database adapter.
+from personal_productivity.events.application.cancel_event import CancelEvent
 from personal_productivity.events.application.create_event import CreateEvent
 from personal_productivity.events.application.get_event import GetEvent
 from personal_productivity.events.application.list_events import ListEvents
@@ -477,3 +478,43 @@ def test_sqlite_save_rejects_non_event_values(
     finally:
         # Always release the native database connection.
         connection.close()
+
+
+def test_cancel_event_persists_transition_through_sqlite() -> None:
+    """Verify that application cancellation survives a SQLite lookup."""
+
+    # Arrange: share one repository across creation and cancellation.
+    connection = sqlite3.connect(":memory:")
+    time_block = CalendarTimeBlock(
+        starts_at=datetime(2026, 9, 29, 18, 0, tzinfo=UTC),
+        ends_at=datetime(2026, 9, 29, 19, 30, tzinfo=UTC),
+    )
+
+    try:
+        initialize_event_schema(connection)
+        repository = SqliteEventRepository(connection=connection)
+        create_event = CreateEvent(repository=repository)
+        cancel_event = CancelEvent(repository=repository)
+        get_event = GetEvent(repository=repository)
+
+        # Act: create, cancel, and read a fresh entity from SQLite.
+        created_event = create_event.execute(
+            title="Boxing training.",
+            time_block=time_block,
+        )
+        cancelled_event = cancel_event.execute(
+            event_id=created_event.id,
+        )
+        retrieved_event = get_event.execute(
+            event_id=created_event.id,
+        )
+    finally:
+        # Always release the native database connection.
+        connection.close()
+
+    # Assert: the lifecycle transition was persisted under the same UUID.
+    assert cancelled_event.id == created_event.id
+    assert cancelled_event.status is EventStatus.CANCELLED
+    assert retrieved_event.id == created_event.id
+    assert retrieved_event.status is EventStatus.CANCELLED
+    assert retrieved_event.time_block == time_block
