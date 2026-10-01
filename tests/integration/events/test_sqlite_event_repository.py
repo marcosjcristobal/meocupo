@@ -263,6 +263,53 @@ def test_list_events_filters_persisted_status_through_sqlite() -> None:
     assert scheduled_event.id not in (event.id for event in listed_events)
 
 
+def test_list_events_filters_persisted_time_blocks_through_sqlite() -> None:
+    """Verify that calendar-window listing uses reconstructed intervals."""
+
+    # Arrange: create one overlapping event and one touching the window end.
+    connection = sqlite3.connect(":memory:")
+    overlapping_time_block = CalendarTimeBlock(
+        starts_at=datetime(2026, 9, 28, 18, 0, tzinfo=UTC),
+        ends_at=datetime(2026, 9, 28, 19, 0, tzinfo=UTC),
+    )
+    touching_time_block = CalendarTimeBlock(
+        starts_at=datetime(2026, 9, 28, 19, 30, tzinfo=UTC),
+        ends_at=datetime(2026, 9, 28, 20, 0, tzinfo=UTC),
+    )
+    requested_time_block = CalendarTimeBlock(
+        starts_at=datetime(2026, 9, 28, 18, 30, tzinfo=UTC),
+        ends_at=datetime(2026, 9, 28, 19, 30, tzinfo=UTC),
+    )
+
+    try:
+        initialize_event_schema(connection)
+        repository = SqliteEventRepository(connection=connection)
+        create_event = CreateEvent(repository=repository)
+        list_events = ListEvents(repository=repository)
+
+        # Act: persist both allocations and query their shared time window.
+        overlapping_event = create_event.execute(
+            title="Boxing training.",
+            time_block=overlapping_time_block,
+        )
+        create_event.execute(
+            title="Dentist appointment.",
+            time_block=touching_time_block,
+        )
+        listed_events = list_events.execute(
+            time_block=requested_time_block,
+        )
+    finally:
+        # Always release the native database connection.
+        connection.close()
+
+    # Assert: SQLite reconstruction retains the half-open overlap rules.
+    assert tuple(event.id for event in listed_events) == (
+        overlapping_event.id,
+    )
+    assert listed_events[0].time_block == overlapping_time_block
+
+
 def test_sqlite_file_preserves_event_across_connections(
     tmp_path: Path,
 ) -> None:

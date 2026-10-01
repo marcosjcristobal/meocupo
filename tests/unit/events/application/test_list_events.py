@@ -127,3 +127,115 @@ def test_list_events_rejects_non_status_filters(
 
     # Invalid requests must fail before querying the repository.
     assert repository.list_call_count == 0
+
+
+def test_list_events_filters_by_overlapping_time_block() -> None:
+    """Return only events occupying part of a requested calendar window."""
+
+    # Arrange: one event overlaps the search window; another only touches it.
+    overlapping_event = Event(
+        title="Boxing training.",
+        time_block=CalendarTimeBlock(
+            starts_at=datetime(2026, 9, 25, 18, 0, tzinfo=UTC),
+            ends_at=datetime(2026, 9, 25, 19, 0, tzinfo=UTC),
+        ),
+    )
+    touching_event = Event(
+        title="Dentist appointment.",
+        time_block=CalendarTimeBlock(
+            starts_at=datetime(2026, 9, 25, 19, 30, tzinfo=UTC),
+            ends_at=datetime(2026, 9, 25, 20, 0, tzinfo=UTC),
+        ),
+    )
+    requested_time_block = CalendarTimeBlock(
+        starts_at=datetime(2026, 9, 25, 18, 30, tzinfo=UTC),
+        ends_at=datetime(2026, 9, 25, 19, 30, tzinfo=UTC),
+    )
+    repository = ReturningEventCollectionRepository(
+        events=(overlapping_event, touching_event),
+    )
+    use_case = ListEvents(repository=repository)
+
+    # Act: request events sharing positive time with the search window.
+    listed_events = use_case.execute(time_block=requested_time_block)
+
+    # Assert: half-open boundaries exclude the event touching at the end.
+    assert listed_events == (overlapping_event,)
+    assert repository.list_call_count == 1
+
+
+@pytest.mark.parametrize(
+    "invalid_time_block",
+    [
+        pytest.param(
+            datetime(2026, 9, 25, 18, 0, tzinfo=UTC),
+            id="raw_datetime",
+        ),
+        pytest.param(("start", "end"), id="tuple"),
+        pytest.param("tonight", id="text"),
+    ],
+)
+def test_list_events_rejects_raw_time_block_filters(
+    invalid_time_block: object,
+) -> None:
+    """Require a validated calendar interval before event lookup."""
+
+    # Arrange: observe whether invalid calendar input reaches persistence.
+    repository = ReturningEventCollectionRepository(events=())
+    use_case = ListEvents(repository=repository)
+
+    # Act and Assert: application queries require the shared value object.
+    with pytest.raises(
+        TypeError,
+        match="Event time block filter must be a CalendarTimeBlock",
+    ):
+        use_case.execute(time_block=invalid_time_block)
+
+    # Invalid requests must fail before querying the repository.
+    assert repository.list_call_count == 0
+
+
+def test_list_events_combines_status_and_time_block_filters() -> None:
+    """Return only events matching both lifecycle and calendar criteria."""
+
+    # Arrange: separate status and time matches from their intersection.
+    matching_time_block = CalendarTimeBlock(
+        starts_at=datetime(2026, 9, 25, 18, 0, tzinfo=UTC),
+        ends_at=datetime(2026, 9, 25, 19, 0, tzinfo=UTC),
+    )
+    other_time_block = CalendarTimeBlock(
+        starts_at=datetime(2026, 9, 26, 18, 0, tzinfo=UTC),
+        ends_at=datetime(2026, 9, 26, 19, 0, tzinfo=UTC),
+    )
+    scheduled_overlap = Event(
+        title="Boxing training.",
+        time_block=matching_time_block,
+    )
+    cancelled_overlap = Event(
+        title="Dentist appointment.",
+        time_block=matching_time_block,
+    )
+    cancelled_elsewhere = Event(
+        title="Eye examination.",
+        time_block=other_time_block,
+    )
+    cancelled_overlap.cancel()
+    cancelled_elsewhere.cancel()
+    repository = ReturningEventCollectionRepository(
+        events=(
+            scheduled_overlap,
+            cancelled_overlap,
+            cancelled_elsewhere,
+        ),
+    )
+    use_case = ListEvents(repository=repository)
+
+    # Act: request cancelled events overlapping only the first interval.
+    listed_events = use_case.execute(
+        status=EventStatus.CANCELLED,
+        time_block=matching_time_block,
+    )
+
+    # Assert: neither a status-only nor a time-only match is returned.
+    assert listed_events == (cancelled_overlap,)
+    assert repository.list_call_count == 1
