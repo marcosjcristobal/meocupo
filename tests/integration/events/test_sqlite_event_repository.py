@@ -22,6 +22,9 @@ from personal_productivity.events.application.cancel_event import CancelEvent
 from personal_productivity.events.application.create_event import CreateEvent
 from personal_productivity.events.application.get_event import GetEvent
 from personal_productivity.events.application.list_events import ListEvents
+from personal_productivity.events.application.reschedule_event import (
+    RescheduleEvent,
+)
 
 # Duplicate creation uses one storage-independent repository outcome.
 from personal_productivity.events.application.ports.event_repository import (
@@ -518,3 +521,49 @@ def test_cancel_event_persists_transition_through_sqlite() -> None:
     assert retrieved_event.id == created_event.id
     assert retrieved_event.status is EventStatus.CANCELLED
     assert retrieved_event.time_block == time_block
+
+
+def test_reschedule_event_persists_new_interval_through_sqlite() -> None:
+    """Verify that application rescheduling survives a SQLite lookup."""
+
+    # Arrange: define separate original and replacement allocations.
+    connection = sqlite3.connect(":memory:")
+    original_time_block = CalendarTimeBlock(
+        starts_at=datetime(2026, 10, 2, 18, 0, tzinfo=UTC),
+        ends_at=datetime(2026, 10, 2, 19, 30, tzinfo=UTC),
+    )
+    replacement_time_block = CalendarTimeBlock(
+        starts_at=datetime(2026, 10, 3, 18, 0, tzinfo=UTC),
+        ends_at=datetime(2026, 10, 3, 19, 30, tzinfo=UTC),
+    )
+
+    try:
+        initialize_event_schema(connection)
+        repository = SqliteEventRepository(connection=connection)
+        create_event = CreateEvent(repository=repository)
+        reschedule_event = RescheduleEvent(repository=repository)
+        get_event = GetEvent(repository=repository)
+
+        # Act: create, move, and reconstruct the event through SQLite.
+        created_event = create_event.execute(
+            title="Boxing training.",
+            time_block=original_time_block,
+        )
+        updated_event = reschedule_event.execute(
+            event_id=created_event.id,
+            time_block=replacement_time_block,
+        )
+        retrieved_event = get_event.execute(event_id=created_event.id)
+    finally:
+        # Always release the native database connection.
+        connection.close()
+
+    # Assert: both application results retain identity and the new interval.
+    assert updated_event.id == created_event.id
+    assert retrieved_event.id == created_event.id
+    assert updated_event.time_block == replacement_time_block
+    assert retrieved_event.time_block == replacement_time_block
+
+    # Assert: moving the event did not cancel it.
+    assert updated_event.status is EventStatus.SCHEDULED
+    assert retrieved_event.status is EventStatus.SCHEDULED
