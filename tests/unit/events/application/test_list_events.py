@@ -3,6 +3,9 @@
 # Datetime builds deterministic calendar allocations for existing events.
 from datetime import UTC, datetime
 
+# Pytest parameterizes invalid filter inputs at the application boundary.
+import pytest
+
 # CalendarTimeBlock defines each event's occupied interval.
 from personal_productivity.calendar.domain.calendar_time_block import (
     CalendarTimeBlock,
@@ -13,6 +16,7 @@ from personal_productivity.events.application.list_events import ListEvents
 
 # Listing tests use complete event domain entities.
 from personal_productivity.events.domain.event import Event
+from personal_productivity.events.domain.event_status import EventStatus
 
 
 class ReturningEventCollectionRepository:
@@ -63,3 +67,63 @@ def test_list_events_returns_repository_snapshot() -> None:
     # Assert: the application returns the same immutable snapshot.
     assert listed_events is expected_events
     assert repository.list_call_count == 1
+
+
+def test_list_events_filters_by_exact_status() -> None:
+    """Verify that callers can select one event lifecycle state."""
+
+    # Arrange: create scheduled and cancelled events in one repository snapshot.
+    scheduled_event = Event(
+        title="Boxing training.",
+        time_block=CalendarTimeBlock(
+            starts_at=datetime(2026, 9, 25, 18, 0, tzinfo=UTC),
+            ends_at=datetime(2026, 9, 25, 19, 30, tzinfo=UTC),
+        ),
+    )
+    cancelled_event = Event(
+        title="Dentist appointment.",
+        time_block=CalendarTimeBlock(
+            starts_at=datetime(2026, 9, 26, 9, 0, tzinfo=UTC),
+            ends_at=datetime(2026, 9, 26, 9, 30, tzinfo=UTC),
+        ),
+    )
+    cancelled_event.cancel()
+    repository = ReturningEventCollectionRepository(
+        events=(scheduled_event, cancelled_event),
+    )
+    use_case = ListEvents(repository=repository)
+
+    # Act: request only events with the cancelled lifecycle state.
+    listed_events = use_case.execute(status=EventStatus.CANCELLED)
+
+    # Assert: filtering keeps matching entities and queries storage once.
+    assert listed_events == (cancelled_event,)
+    assert repository.list_call_count == 1
+
+
+@pytest.mark.parametrize(
+    "invalid_status",
+    [
+        pytest.param("cancelled", id="text"),
+        pytest.param(1, id="integer"),
+        pytest.param(True, id="boolean"),
+    ],
+)
+def test_list_events_rejects_non_status_filters(
+    invalid_status: object,
+) -> None:
+    """Ensure that arbitrary values cannot become lifecycle filters."""
+
+    # Arrange: observe whether a rejected request reaches persistence.
+    repository = ReturningEventCollectionRepository(events=())
+    use_case = ListEvents(repository=repository)
+
+    # Act and Assert: filters require the explicit domain enum.
+    with pytest.raises(
+        TypeError,
+        match="Event status filter must be an EventStatus",
+    ):
+        use_case.execute(status=invalid_status)
+
+    # Invalid requests must fail before querying the repository.
+    assert repository.list_call_count == 0

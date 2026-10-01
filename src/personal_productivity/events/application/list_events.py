@@ -10,6 +10,7 @@ from personal_productivity.events.application.ports.event_repository import (
 
 # Event represents each complete entity in the returned snapshot.
 from personal_productivity.events.domain.event import Event
+from personal_productivity.events.domain.event_status import EventStatus
 
 
 @dataclass(slots=True, kw_only=True)
@@ -19,8 +20,25 @@ class ListEvents:
     # Dependency injection allows the same use case to work with any adapter.
     repository: EventRepository
 
-    def execute(self) -> tuple[Event, ...]:
-        """Return the repository's immutable event collection."""
+    def execute(
+        self,
+        *,
+        status: EventStatus | None = None,
+    ) -> tuple[Event, ...]:
+        """Return all events or only those with the requested status."""
 
-        # The repository owns collection retrieval and snapshot creation.
-        return self.repository.list_all()
+        # Reject malformed filters before requesting a persistence snapshot.
+        if status is not None and not isinstance(status, EventStatus):
+            raise TypeError(
+                "Event status filter must be an EventStatus."
+            )
+
+        # Request one immutable snapshot regardless of the selected filter.
+        events = self.repository.list_all()
+
+        # Preserve the original snapshot when the caller requests all events.
+        if status is None:
+            return events
+
+        # Select matching domain states without changing repository storage.
+        return tuple(event for event in events if event.status is status)

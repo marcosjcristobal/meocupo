@@ -223,6 +223,46 @@ def test_event_use_cases_collaborate_through_sqlite() -> None:
     )
 
 
+def test_list_events_filters_persisted_status_through_sqlite() -> None:
+    """Verify that listing filters reconstructed event lifecycle states."""
+
+    # Arrange: give two events the same interval but different states.
+    connection = sqlite3.connect(":memory:")
+    time_block = CalendarTimeBlock(
+        starts_at=datetime(2026, 9, 27, 18, 0, tzinfo=UTC),
+        ends_at=datetime(2026, 9, 27, 19, 30, tzinfo=UTC),
+    )
+
+    try:
+        initialize_event_schema(connection)
+        repository = SqliteEventRepository(connection=connection)
+        create_event = CreateEvent(repository=repository)
+        cancel_event = CancelEvent(repository=repository)
+        list_events = ListEvents(repository=repository)
+
+        # Act: cancel one stored event and request only cancelled events.
+        scheduled_event = create_event.execute(
+            title="Boxing training.",
+            time_block=time_block,
+        )
+        cancelled_event = create_event.execute(
+            title="Dentist appointment.",
+            time_block=time_block,
+        )
+        cancel_event.execute(event_id=cancelled_event.id)
+        listed_events = list_events.execute(status=EventStatus.CANCELLED)
+    finally:
+        # Always release the native database connection.
+        connection.close()
+
+    # Assert: only the matching persisted event survives filtering.
+    assert tuple(event.id for event in listed_events) == (
+        cancelled_event.id,
+    )
+    assert listed_events[0].status is EventStatus.CANCELLED
+    assert scheduled_event.id not in (event.id for event in listed_events)
+
+
 def test_sqlite_file_preserves_event_across_connections(
     tmp_path: Path,
 ) -> None:
